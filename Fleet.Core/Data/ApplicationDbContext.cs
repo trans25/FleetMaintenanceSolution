@@ -201,5 +201,66 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 6, Name = "Auditor", Description = "Auditor/Read-Only - View reports, logs, and fleet data for auditing", CreatedAt = DateTime.UtcNow },
             new Role { Id = 7, Name = "Guest", Description = "Guest/Limited User - View only general info and public dashboards", CreatedAt = DateTime.UtcNow }
         );
+
+        // Seed default tenant
+        modelBuilder.Entity<Tenant>().HasData(
+            new Tenant 
+            { 
+                Id = 1, 
+                Name = "Demo Fleet Company", 
+                ContactEmail = "admin@demofleet.com", 
+                ContactPhone = "+1-555-0100",
+                IsActive = true, 
+                CreatedAt = DateTime.UtcNow 
+            }
+        );
+
+        // Seed test users (Note: Using plain text passwords for demo - password = username)
+        modelBuilder.Entity<User>().HasData(
+            new User 
+            { 
+                Id = 1, 
+                TenantId = 1,
+                Username = "admin", 
+                Email = "admin@demofleet.com",
+                PasswordHash = "admin", // In demo, password matches username
+                FirstName = "System",
+                LastName = "Administrator",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow 
+            },
+            new User 
+            { 
+                Id = 2, 
+                TenantId = 1,
+                Username = "manager", 
+                Email = "manager@demofleet.com",
+                PasswordHash = "manager",
+                FirstName = "Fleet",
+                LastName = "Manager",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow 
+            },
+            new User 
+            { 
+                Id = 3, 
+                TenantId = 1,
+                Username = "tech", 
+                Email = "tech@demofleet.com",
+                PasswordHash = "tech",
+                FirstName = "John",
+                LastName = "Technician",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow 
+            }
+        );
+
+        // Assign roles to users (many-to-many)
+        modelBuilder.Entity("RoleUser").HasData(
+            new { RolesId = 1, UsersId = 1 }, // admin -> SystemAdmin
+            new { RolesId = 2, UsersId = 1 }, // admin -> TenantAdmin
+            new { RolesId = 3, UsersId = 2 }, // manager -> FleetManager
+            new { RolesId = 4, UsersId = 3 }  // tech -> Technician
+        );
     }
 }
