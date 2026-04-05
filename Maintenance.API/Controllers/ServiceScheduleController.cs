@@ -1,5 +1,6 @@
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
+using Maintenance.API.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -59,10 +60,21 @@ public class ServiceScheduleController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = "RequireManager")]
-    public async Task<ActionResult<ServiceSchedule>> CreateSchedule([FromBody] ServiceSchedule schedule)
+    public async Task<ActionResult<ServiceSchedule>> CreateSchedule([FromBody] CreateServiceScheduleViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+
+        var schedule = new ServiceSchedule
+        {
+            TenantId = model.TenantId,
+            VehicleId = model.VehicleId,
+            ServiceType = model.ServiceType,
+            ScheduledDate = model.ScheduledDate,
+            MileageAtService = model.MileageAtService,
+            Description = model.Description,
+            Status = model.Status
+        };
 
         var createdSchedule = await _scheduleService.CreateScheduleAsync(schedule);
         return CreatedAtAction(nameof(GetScheduleById), new { id = createdSchedule.Id }, createdSchedule);
@@ -70,17 +82,29 @@ public class ServiceScheduleController : ControllerBase
 
     [HttpPut("{id}")]
     [Authorize(Policy = "CanEdit")]
-    public async Task<ActionResult<ServiceSchedule>> UpdateSchedule(int id, [FromBody] ServiceSchedule schedule)
+    public async Task<ActionResult<ServiceSchedule>> UpdateSchedule(int id, [FromBody] UpdateServiceScheduleViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (id != schedule.Id)
+        if (id != model.Id)
             return BadRequest("ID mismatch");
 
         var existingSchedule = await _scheduleService.GetScheduleByIdAsync(id);
         if (existingSchedule == null)
             return NotFound($"Service schedule with ID {id} not found");
+
+        var schedule = new ServiceSchedule
+        {
+            Id = model.Id,
+            TenantId = model.TenantId,
+            VehicleId = model.VehicleId,
+            ServiceType = model.ServiceType,
+            ScheduledDate = model.ScheduledDate,
+            MileageAtService = model.MileageAtService,
+            Description = model.Description,
+            Status = model.Status
+        };
 
         var updatedSchedule = await _scheduleService.UpdateScheduleAsync(schedule);
         return Ok(updatedSchedule);

@@ -12,6 +12,8 @@ import Vehicles from './pages/Vehicles';
 import Faults from './pages/Faults';
 import JobCards from './pages/JobCards';
 import ServiceSchedules from './pages/ServiceSchedules';
+import Tenants from './pages/Tenants';
+import Users from './pages/Users';
 
 // Microsoft Fluent UI inspired theme
 const theme = createTheme({
@@ -123,11 +125,15 @@ function App() {
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
+              <Route path="tenants" element={<Tenants />} />
+              <Route path="users" element={<Users />} />
               <Route path="fleets" element={<Fleets />} />
               <Route path="vehicles" element={<Vehicles />} />
               <Route path="faults" element={<Faults />} />
               <Route path="job-cards" element={<JobCards />} />
               <Route path="service-schedules" element={<ServiceSchedules />} />
+              <Route path="work-history" element={<ServiceSchedules />} />
+              <Route path="reports" element={<Dashboard />} />
             </Route>
           </Routes>
         </Router>

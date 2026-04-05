@@ -4,16 +4,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fleet.Core.Repositories;
 
-public class FleetRepository : Repository<Domain.Fleet>, IFleetRepository
+/// <summary>
+/// Fleet repository with multi-tenant support
+/// </summary>
+public class FleetRepository : BaseTenantRepository<Domain.Fleet>, IFleetRepository
 {
-    public FleetRepository(ApplicationDbContext context) : base(context)
+    public FleetRepository(ApplicationDbContext context, ITenantService tenantService) 
+        : base(context, tenantService)
     {
     }
 
     public async Task<IEnumerable<Domain.Fleet>> GetFleetsByTenantIdAsync(int tenantId)
     {
         return await _dbSet
-            .Include(f => f.Vehicles)
+            .AsNoTracking()
             .Where(f => f.TenantId == tenantId)
             .ToListAsync();
     }
@@ -21,7 +25,7 @@ public class FleetRepository : Repository<Domain.Fleet>, IFleetRepository
     public async Task<IEnumerable<Domain.Fleet>> GetActiveFleetsAsync()
     {
         return await _dbSet
-            .Include(f => f.Vehicles)
+            .AsNoTracking()
             .Where(f => f.IsActive)
             .ToListAsync();
     }
@@ -29,16 +33,14 @@ public class FleetRepository : Repository<Domain.Fleet>, IFleetRepository
     public override async Task<IEnumerable<Domain.Fleet>> GetAllAsync()
     {
         return await _dbSet
-            .Include(f => f.Tenant)
-            .Include(f => f.Vehicles)
+            .AsNoTracking()
             .ToListAsync();
     }
 
     public override async Task<Domain.Fleet?> GetByIdAsync(int id)
     {
         return await _dbSet
-            .Include(f => f.Tenant)
-            .Include(f => f.Vehicles)
+            .AsNoTracking()
             .FirstOrDefaultAsync(f => f.Id == id);
     }
 }

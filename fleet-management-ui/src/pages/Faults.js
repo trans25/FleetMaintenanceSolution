@@ -19,14 +19,23 @@ import { DataGrid } from '@mui/x-data-grid';
 import { Add, Edit, Delete, Refresh } from '@mui/icons-material';
 import maintenanceService from '../services/maintenanceService';
 import fleetService from '../services/fleetService';
+import { useAuth } from '../contexts/AuthContext';
 
 const Faults = () => {
+  const { user } = useAuth();
+  const isSystemAdmin = user?.roles?.includes('SystemAdmin');
+  const isTenantAdmin = user?.roles?.includes('TenantAdmin');
+  const userTenantId = user?.tenantId;
+  
   const [faults, setFaults] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingFault, setEditingFault] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null, name: '' });
   const [formData, setFormData] = useState({
+    tenantId: '',
     vehicleId: '',
     description: '',
     severity: 'Medium',
@@ -42,12 +51,33 @@ const Faults = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [faultsRes, vehiclesRes] = await Promise.all([
+      const [faultsRes, vehiclesRes, fleetsRes, tenantsRes] = await Promise.all([
         maintenanceService.getAllFaults(),
         fleetService.getAllVehicles(),
+        fleetService.getAllFleets(),
+        fleetService.getAllTenants(),
       ]);
-      setFaults(faultsRes.data || []);
-      setVehicles(vehiclesRes.data || []);
+      
+      const allFleets = fleetsRes.data || [];
+      const filteredFleets = isTenantAdmin 
+        ? allFleets.filter(f => f.tenantId === userTenantId)
+        : allFleets;
+      const fleetIds = new Set(filteredFleets.map(f => f.id));
+      
+      const allVehicles = vehiclesRes.data || [];
+      const filteredVehicles = isTenantAdmin 
+        ? allVehicles.filter(v => fleetIds.has(v.fleetId))
+        : allVehicles;
+      const vehicleIds = new Set(filteredVehicles.map(v => v.id));
+      
+      const allFaults = faultsRes.data || [];
+      const filteredFaults = isTenantAdmin 
+        ? allFaults.filter(f => vehicleIds.has(f.vehicleId))
+        : allFaults;
+      
+      setFaults(filteredFaults);
+      setVehicles(filteredVehicles);
+      setTenants(tenantsRes.data || []);
     } catch (error) {
       showSnackbar('Error loading data', 'error');
     } finally {
@@ -59,6 +89,7 @@ const Faults = () => {
     if (fault) {
       setEditingFault(fault);
       setFormData({
+        tenantId: fault.tenantId || (tenants[0]?.id || ''),
         vehicleId: fault.vehicleId,
         description: fault.description,
         severity: fault.severity,
@@ -68,6 +99,7 @@ const Faults = () => {
     } else {
       setEditingFault(null);
       setFormData({
+        tenantId: tenants[0]?.id || '',
         vehicleId: vehicles[0]?.id || '',
         description: '',
         severity: 'Medium',
@@ -87,6 +119,7 @@ const Faults = () => {
     try {
       const data = {
         ...formData,
+        tenantId: parseInt(formData.tenantId),
         reportedDate: new Date(formData.reportedDate).toISOString(),
       };
 
@@ -104,16 +137,23 @@ const Faults = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this fault?')) {
-      try {
-        await maintenanceService.deleteFault(id);
-        showSnackbar('Fault deleted successfully');
-        loadData();
-      } catch (error) {
-        showSnackbar('Error deleting fault', 'error');
-      }
+  const handleDeleteClick = (fault) => {
+    setDeleteDialog({ open: true, id: fault.id, name: `Fault #${fault.id}` });
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await maintenanceService.deleteFault(deleteDialog.id);
+      showSnackbar('Fault deleted successfully');
+      loadData();
+    } catch (error) {
+      showSnackbar('Error deleting fault', 'error');
     }
+    setDeleteDialog({ open: false, id: null, name: '' });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ open: false, id: null, name: '' });
   };
 
   const showSnackbar = (message, severity = 'success') => {
@@ -146,7 +186,11 @@ const Faults = () => {
       field: 'vehicleId',
       headerName: 'Vehicle',
       width: 150,
-      valueGetter: (params) => vehicles.find(v => v.id === params.row.vehicleId)?.registrationNumber || params.row.vehicleId,
+      valueGetter: (params) => {
+        if (!params || !params.row) return '';
+        const vehicle = vehicles.find(v => v.id === params.row.vehicleId);
+        return vehicle?.registrationNumber || params.row.vehicleId || '';
+      },
     },
     { field: 'description', headerName: 'Description', flex: 1, minWidth: 250 },
     {
@@ -181,7 +225,7 @@ const Faults = () => {
           <IconButton size="small" onClick={() => handleOpenDialog(params.row)} color="primary">
             <Edit fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={() => handleDelete(params.row.id)} color="error">
+          <IconButton size="small" onClick={() => handleDeleteClick(params.row)} color="error">
             <Delete fontSize="small" />
           </IconButton>
         </Box>
@@ -222,6 +266,24 @@ const Faults = () => {
         <DialogTitle>{editingFault ? 'Edit Fault' : 'Report New Fault'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
+            {user?.roles?.includes('SystemAdmin') && (
+              <Grid item xs={12}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Tenant"
+                  value={formData.tenantId}
+                  onChange={(e) => setFormData({ ...formData, tenantId: e.target.value })}
+                  required
+                >
+                  {tenants.map((tenant) => (
+                    <MenuItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+            )}
             <Grid item xs={12}>
               <TextField
                 select
@@ -295,6 +357,45 @@ const Faults = () => {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSave} variant="contained">
             {editingFault ? 'Update' : 'Report'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialog.open}
+        onClose={handleDeleteCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 2 }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Delete color="error" />
+            <Typography variant="h6" component="span">Confirm Delete</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            Are you sure you want to delete this fault?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <strong>{deleteDialog.name}</strong>
+          </Typography>
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This action cannot be undone. The fault record will be permanently removed.
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleDeleteCancel} variant="outlined" color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} variant="contained" color="error" startIcon={<Delete />}>
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

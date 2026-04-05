@@ -1,8 +1,21 @@
+using Fleet.Core.Interfaces;
+
 namespace Fleet.Core.Domain;
 
-public class Vehicle
+/// <summary>
+/// Vehicle entity with multi-tenant support
+/// Each vehicle belongs to a specific tenant for data isolation
+/// </summary>
+public class Vehicle : ITenantEntity
 {
     public int Id { get; set; }
+    
+    /// <summary>
+    /// Tenant ID for multi-tenant data isolation
+    /// Automatically filtered in all queries
+    /// </summary>
+    public int TenantId { get; set; }
+    
     public int FleetId { get; set; }
     public int ManufacturerId { get; set; }
     public string RegistrationNumber { get; set; } = string.Empty;

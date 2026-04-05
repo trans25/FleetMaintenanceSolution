@@ -1,8 +1,19 @@
+using Fleet.Core.Interfaces;
+
 namespace Fleet.Core.Domain;
 
-public class Fault
+/// <summary>
+/// Fault entity with multi-tenant support
+/// </summary>
+public class Fault : ITenantEntity
 {
     public int Id { get; set; }
+    
+    /// <summary>
+    /// Tenant ID for multi-tenant data isolation
+    /// </summary>
+    public int TenantId { get; set; }
+    
     public int VehicleId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;

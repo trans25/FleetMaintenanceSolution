@@ -1,3 +1,4 @@
+using Fleet.API.ViewModels;
 using Fleet.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -50,10 +51,19 @@ public class FleetController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = "RequireManager")]
-    public async Task<ActionResult<Core.Domain.Fleet>> CreateFleet([FromBody] Core.Domain.Fleet fleet)
+    public async Task<ActionResult<Core.Domain.Fleet>> CreateFleet([FromBody] CreateFleetViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+
+        var fleet = new Core.Domain.Fleet
+        {
+            TenantId = model.TenantId,
+            Name = model.Name,
+            Description = model.Description,
+            Location = model.Location,
+            IsActive = model.IsActive
+        };
 
         var createdFleet = await _fleetService.CreateFleetAsync(fleet);
         return CreatedAtAction(nameof(GetFleetById), new { id = createdFleet.Id }, createdFleet);
@@ -61,17 +71,27 @@ public class FleetController : ControllerBase
 
     [HttpPut("{id}")]
     [Authorize(Policy = "RequireManager")]
-    public async Task<ActionResult<Core.Domain.Fleet>> UpdateFleet(int id, [FromBody] Core.Domain.Fleet fleet)
+    public async Task<ActionResult<Core.Domain.Fleet>> UpdateFleet(int id, [FromBody] UpdateFleetViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (id != fleet.Id)
+        if (id != model.Id)
             return BadRequest("ID mismatch");
 
         var existingFleet = await _fleetService.GetFleetByIdAsync(id);
         if (existingFleet == null)
             return NotFound($"Fleet with ID {id} not found");
+
+        var fleet = new Core.Domain.Fleet
+        {
+            Id = model.Id,
+            TenantId = model.TenantId,
+            Name = model.Name,
+            Description = model.Description,
+            Location = model.Location,
+            IsActive = model.IsActive
+        };
 
         var updatedFleet = await _fleetService.UpdateFleetAsync(fleet);
         return Ok(updatedFleet);

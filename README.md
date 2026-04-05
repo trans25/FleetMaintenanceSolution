@@ -323,7 +323,76 @@ To add additional microservices (e.g., Fleet.API, JobCard.API):
 4. Implement controllers following the same pattern
 5. Configure JWT authentication (use same secret key for all services)
 
-## 📄 License
+## � Deployment
+
+### Quick Deployment
+
+```powershell
+# Local Development
+.\deploy-local.ps1
+
+# IIS Production (Run as Administrator)
+.\deploy-iis.ps1
+
+# Azure Cloud
+.\deploy-azure.ps1 -ResourceGroup "rg-fleet" -Location "eastus" -SqlAdminPassword "YourPass123!"
+```
+
+### Deployment Options
+
+The Fleet Maintenance Solution supports three deployment environments:
+
+| Environment | Use Case | Cost | Setup Time |
+|------------|----------|------|------------|
+| **Local Dev** | Development & Testing | Free | 5 minutes |
+| **IIS** | On-Premise/Internal | Server cost only | 15 minutes |
+| **Azure** | Cloud/Production | $40-250/month | 20 minutes |
+
+### Documentation
+
+- **[DEPLOYMENT-QUICKSTART.md](DEPLOYMENT-QUICKSTART.md)** - Quick reference guide
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
+- **[DEPLOYMENT-IIS.md](DEPLOYMENT-IIS.md)** - IIS deployment details
+- **[DEPLOYMENT-AZURE.md](DEPLOYMENT-AZURE.md)** - Azure deployment details
+
+### Production Checklist
+
+- [ ] Update JWT secret keys in all APIs
+- [ ] Change default user passwords
+- [ ] Configure HTTPS/SSL certificates
+- [ ] Set up database backups
+- [ ] Configure monitoring and logging
+- [ ] Review firewall and security rules
+- [ ] Update CORS origins
+- [ ] Set up CI/CD pipeline (optional)
+
+### Access Points After Deployment
+
+**Local Development:**
+- Frontend: http://localhost:3000
+- Auth API: http://localhost:5001
+- Fleet API: http://localhost:5002
+- Maintenance API: http://localhost:5003
+- Vehicle API: http://localhost:5000
+
+**IIS Production:**
+- Frontend: http://YOUR_SERVER
+- APIs: http://YOUR_SERVER:5000-5003
+
+**Azure Production:**
+- Frontend: https://YOUR-APP.azurestaticapps.net
+- APIs: https://YOUR-APP.azurewebsites.net
+
+### Default Credentials
+
+| Role | Email | Password |
+|------|-------|----------|
+| SystemAdmin | mashiaes@gmail.com | test123 |
+| TenantAdmin | Admin@TheCourier.co.za | test123 |
+
+⚠️ **Change these passwords immediately after first login in production!**
+
+## �📄 License
 
 This is a production-ready template for Fleet Maintenance System.
 

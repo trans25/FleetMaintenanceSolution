@@ -5,29 +5,27 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fleet.Core.Repositories;
 
-public class JobCardRepository : Repository<JobCard>, IJobCardRepository
+/// <summary>
+/// JobCard repository with multi-tenant support
+/// </summary>
+public class JobCardRepository : BaseTenantRepository<JobCard>, IJobCardRepository
 {
-    public JobCardRepository(ApplicationDbContext context) : base(context)
+    public JobCardRepository(ApplicationDbContext context, ITenantService tenantService) 
+        : base(context, tenantService)
     {
     }
 
     public async Task<JobCard?> GetByJobNumberAsync(string jobNumber)
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.Fault)
-            .Include(j => j.AssignedTo)
-            .Include(j => j.Tasks)
+            .AsNoTracking()
             .FirstOrDefaultAsync(j => j.JobNumber == jobNumber);
     }
 
     public async Task<IEnumerable<JobCard>> GetJobCardsByVehicleIdAsync(int vehicleId)
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.Fault)
-            .Include(j => j.AssignedTo)
-            .Include(j => j.Tasks)
+            .AsNoTracking()
             .Where(j => j.VehicleId == vehicleId)
             .OrderByDescending(j => j.CreatedDate)
             .ToListAsync();
@@ -36,8 +34,7 @@ public class JobCardRepository : Repository<JobCard>, IJobCardRepository
     public async Task<IEnumerable<JobCard>> GetJobCardsByStatusAsync(string status)
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.AssignedTo)
+            .AsNoTracking()
             .Where(j => j.Status == status)
             .OrderByDescending(j => j.CreatedDate)
             .ToListAsync();
@@ -46,9 +43,7 @@ public class JobCardRepository : Repository<JobCard>, IJobCardRepository
     public async Task<IEnumerable<JobCard>> GetJobCardsByAssignedUserAsync(int userId)
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.Fault)
-            .Include(j => j.Tasks)
+            .AsNoTracking()
             .Where(j => j.AssignedToUserId == userId)
             .OrderByDescending(j => j.CreatedDate)
             .ToListAsync();
@@ -57,20 +52,14 @@ public class JobCardRepository : Repository<JobCard>, IJobCardRepository
     public override async Task<IEnumerable<JobCard>> GetAllAsync()
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.Fault)
-            .Include(j => j.AssignedTo)
-            .Include(j => j.Tasks)
+            .AsNoTracking()
             .ToListAsync();
     }
 
     public override async Task<JobCard?> GetByIdAsync(int id)
     {
         return await _dbSet
-            .Include(j => j.Vehicle)
-            .Include(j => j.Fault)
-            .Include(j => j.AssignedTo)
-            .Include(j => j.Tasks)
+            .AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == id);
     }
 }

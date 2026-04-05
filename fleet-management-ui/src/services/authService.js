@@ -3,11 +3,19 @@ import { authApi } from './api';
 const authService = {
   login: async (username, password) => {
     const response = await authApi.post('/Auth/login', { username, password });
-    const { token, username: user, email, roles } = response.data;
+    const { token, username: user, email, tenantId, roles } = response.data;
     
-    // Store token and user info
+    // Debug logging
+    console.log('Login response:', { token: token?.substring(0, 20) + '...', user, email, tenantId, roles });
+    
+    // Store token and user info - ensure tenantId is a number
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify({ username: user, email, roles }));
+    localStorage.setItem('user', JSON.stringify({ 
+      username: user, 
+      email, 
+      tenantId: tenantId || null, 
+      roles 
+    }));
     
     return response.data;
   },

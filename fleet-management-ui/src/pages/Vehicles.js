@@ -18,14 +18,23 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Add, Edit, Delete, Refresh } from '@mui/icons-material';
 import fleetService from '../services/fleetService';
+import { useAuth } from '../contexts/AuthContext';
 
 const Vehicles = () => {
+  const { user } = useAuth();
+  const isSystemAdmin = user?.roles?.includes('SystemAdmin');
+  const isTenantAdmin = user?.roles?.includes('TenantAdmin');
+  const userTenantId = user?.tenantId;
+  
   const [vehicles, setVehicles] = useState([]);
   const [fleets, setFleets] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null, name: '' });
   const [formData, setFormData] = useState({
+    tenantId: '',
     fleetId: '',
     manufacturerId: 1,
     registrationNumber: '',
@@ -46,12 +55,28 @@ const Vehicles = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [vehiclesRes, fleetsRes] = await Promise.all([
+      const [vehiclesRes, fleetsRes, tenantsRes] = await Promise.all([
         fleetService.getAllVehicles(),
         fleetService.getAllFleets(),
+        fleetService.getAllTenants(),
       ]);
-      setVehicles(vehiclesRes.data || []);
-      setFleets(fleetsRes.data || []);
+      
+      const allVehicles = vehiclesRes.data || [];
+      const allFleets = fleetsRes.data || [];
+      
+      // Filter fleets and vehicles by tenant for TenantAdmin
+      const filteredFleets = isTenantAdmin 
+        ? allFleets.filter(f => f.tenantId === userTenantId)
+        : allFleets;
+      
+      const filteredFleetIds = new Set(filteredFleets.map(f => f.id));
+      const filteredVehicles = isTenantAdmin 
+        ? allVehicles.filter(v => filteredFleetIds.has(v.fleetId))
+        : allVehicles;
+      
+      setVehicles(filteredVehicles);
+      setFleets(filteredFleets);
+      setTenants(tenantsRes.data || []);
     } catch (error) {
       showSnackbar('Error loading data', 'error');
     } finally {
@@ -63,6 +88,7 @@ const Vehicles = () => {
     if (vehicle) {
       setEditingVehicle(vehicle);
       setFormData({
+        tenantId: vehicle.tenantId || (tenants[0]?.id || ''),
         fleetId: vehicle.fleetId,
         manufacturerId: vehicle.manufacturerId || 1,
         registrationNumber: vehicle.registrationNumber,
@@ -77,6 +103,7 @@ const Vehicles = () => {
     } else {
       setEditingVehicle(null);
       setFormData({
+        tenantId: tenants[0]?.id || '',
         fleetId: fleets[0]?.id || '',
         manufacturerId: 1,
         registrationNumber: '',
@@ -101,6 +128,8 @@ const Vehicles = () => {
     try {
       const data = {
         ...formData,
+        tenantId: parseInt(formData.tenantId),
+        fleetId: parseInt(formData.fleetId),
         purchaseDate: new Date(formData.purchaseDate).toISOString(),
       };
 
@@ -118,16 +147,23 @@ const Vehicles = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this vehicle?')) {
-      try {
-        await fleetService.deleteVehicle(id);
-        showSnackbar('Vehicle deleted successfully');
-        loadData();
-      } catch (error) {
-        showSnackbar('Error deleting vehicle', 'error');
-      }
+  const handleDeleteClick = (vehicle) => {
+    setDeleteDialog({ open: true, id: vehicle.id, name: vehicle.registrationNumber });
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await fleetService.deleteVehicle(deleteDialog.id);
+      showSnackbar('Vehicle deleted successfully');
+      loadData();
+    } catch (error) {
+      showSnackbar('Error deleting vehicle', 'error');
     }
+    setDeleteDialog({ open: false, id: null, name: '' });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ open: false, id: null, name: '' });
   };
 
   const showSnackbar = (message, severity = 'success') => {
@@ -146,6 +182,27 @@ const Vehicles = () => {
   const columns = [
     { field: 'id', headerName: 'ID', width: 70 },
     { field: 'registrationNumber', headerName: 'Registration', width: 150 },
+    {
+      field: 'tenantId',
+      headerName: 'Tenant',
+      width: 150,
+      renderCell: (params) => {
+        if (!params.row || params.value === undefined) return '';
+        const fleet = fleets.find((f) => f.id === params.row.fleetId);
+        const tenant = tenants.find((t) => t.id === fleet?.tenantId);
+        return tenant?.name || params.value || '';
+      },
+    },
+    {
+      field: 'fleetId',
+      headerName: 'Fleet',
+      width: 150,
+      renderCell: (params) => {
+        if (!params.row || params.value === undefined) return '';
+        const fleet = fleets.find((f) => f.id === params.value);
+        return fleet?.name || params.value || '';
+      },
+    },
     { field: 'model', headerName: 'Model', flex: 1, minWidth: 180 },
     { field: 'year', headerName: 'Year', width: 90 },
     { field: 'color', headerName: 'Color', width: 120 },
@@ -168,7 +225,7 @@ const Vehicles = () => {
           <IconButton size="small" onClick={() => handleOpenDialog(params.row)} color="primary">
             <Edit fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={() => handleDelete(params.row.id)} color="error">
+          <IconButton size="small" onClick={() => handleDeleteClick(params.row)} color="error">
             <Delete fontSize="small" />
           </IconButton>
         </Box>
@@ -209,7 +266,25 @@ const Vehicles = () => {
         <DialogTitle>{editingVehicle ? 'Edit Vehicle' : 'Add New Vehicle'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} sm={6}>
+            {user?.roles?.includes('SystemAdmin') && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Tenant"
+                  value={formData.tenantId}
+                  onChange={(e) => setFormData({ ...formData, tenantId: e.target.value })}
+                  required
+                >
+                  {tenants.map((tenant) => (
+                    <MenuItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+            )}
+            <Grid item xs={12} sm={user?.roles?.includes('SystemAdmin') ? 6 : 12}>
               <TextField
                 select
                 fullWidth
@@ -308,6 +383,45 @@ const Vehicles = () => {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSave} variant="contained">
             {editingVehicle ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialog.open}
+        onClose={handleDeleteCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 2 }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Delete color="error" />
+            <Typography variant="h6" component="span">Confirm Delete</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            Are you sure you want to delete this vehicle?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <strong>{deleteDialog.name}</strong>
+          </Typography>
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This action cannot be undone. All associated data will be permanently removed.
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleDeleteCancel} variant="outlined" color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} variant="contained" color="error" startIcon={<Delete />}>
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

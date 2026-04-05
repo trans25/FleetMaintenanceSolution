@@ -1,5 +1,6 @@
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
+using Maintenance.API.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -67,10 +68,22 @@ public class FaultController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = "CanAdd")]
-    public async Task<ActionResult<Fault>> ReportFault([FromBody] Fault fault)
+    public async Task<ActionResult<Fault>> ReportFault([FromBody] CreateFaultViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+
+        var fault = new Fault
+        {
+            TenantId = model.TenantId,
+            VehicleId = model.VehicleId,
+            Title = model.Title,
+            Description = model.Description,
+            Severity = model.Severity,
+            Status = model.Status,
+            ReportedDate = model.ReportedDate,
+            ReportedByUserId = model.ReportedByUserId
+        };
 
         var createdFault = await _faultService.ReportFaultAsync(fault);
         return CreatedAtAction(nameof(GetFaultById), new { id = createdFault.Id }, createdFault);
@@ -78,17 +91,31 @@ public class FaultController : ControllerBase
 
     [HttpPut("{id}")]
     [Authorize(Policy = "CanEdit")]
-    public async Task<ActionResult<Fault>> UpdateFault(int id, [FromBody] Fault fault)
+    public async Task<ActionResult<Fault>> UpdateFault(int id, [FromBody] UpdateFaultViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (id != fault.Id)
+        if (id != model.Id)
             return BadRequest("ID mismatch");
 
         var existingFault = await _faultService.GetFaultByIdAsync(id);
         if (existingFault == null)
             return NotFound($"Fault with ID {id} not found");
+
+        var fault = new Fault
+        {
+            Id = model.Id,
+            TenantId = model.TenantId,
+            VehicleId = model.VehicleId,
+            Title = model.Title,
+            Description = model.Description,
+            Severity = model.Severity,
+            Status = model.Status,
+            ReportedDate = model.ReportedDate,
+            ResolvedDate = model.ResolvedDate,
+            ReportedByUserId = model.ReportedByUserId
+        };
 
         var updatedFault = await _faultService.UpdateFaultAsync(fault);
         return Ok(updatedFault);

@@ -24,23 +24,33 @@ import {
   Delete as DeleteIcon,
   CheckCircle as CheckIcon,
 } from '@mui/icons-material';
-import { maintenanceApi, fleetApi } from '../services/api';
+import { maintenanceApi } from '../services/api';
+import fleetService from '../services/fleetService';
 import { format } from 'date-fns';
+import { useAuth } from '../contexts/AuthContext';
 
 const ServiceSchedules = () => {
+  const { user } = useAuth();
+  const isSystemAdmin = user?.roles?.includes('SystemAdmin');
+  const isTenantAdmin = user?.roles?.includes('TenantAdmin');
+  const userTenantId = user?.tenantId;
+  
   const [schedules, setSchedules] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null, name: '' });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [formData, setFormData] = useState({
+    tenantId: '',
     vehicleId: '',
     serviceType: 'Regular Maintenance',
     scheduledDate: '',
-    mileageInterval: 0,
+    mileageAtService: 0,
     description: '',
-    isCompleted: false,
+    status: 'Scheduled',
   });
 
   const serviceTypes = [
@@ -56,13 +66,31 @@ const ServiceSchedules = () => {
   useEffect(() => {
     fetchSchedules();
     fetchVehicles();
+    fetchTenants();
   }, []);
 
   const fetchSchedules = async () => {
     try {
       setLoading(true);
       const response = await maintenanceApi.get('/ServiceSchedule');
-      setSchedules(response.data);
+      const allSchedules = response.data || [];
+      
+      if (isTenantAdmin) {
+        // Get vehicles for tenant
+        const fleetsRes = await fleetService.getAllFleets();
+        const fleets = (fleetsRes.data || []).filter(f => f.tenantId === userTenantId);
+        const fleetIds = new Set(fleets.map(f => f.id));
+        
+        const vehiclesRes = await fleetService.getAllVehicles();
+        const tenantVehicles = (vehiclesRes.data || []).filter(v => fleetIds.has(v.fleetId));
+        const vehicleIds = new Set(tenantVehicles.map(v => v.id));
+        
+        // Filter schedules by tenant vehicles
+        const filteredSchedules = allSchedules.filter(s => vehicleIds.has(s.vehicleId));
+        setSchedules(filteredSchedules);
+      } else {
+        setSchedules(allSchedules);
+      }
     } catch (error) {
       showSnackbar('Failed to fetch service schedules', 'error');
       console.error('Error fetching schedules:', error);
@@ -73,10 +101,29 @@ const ServiceSchedules = () => {
 
   const fetchVehicles = async () => {
     try {
-      const response = await fleetApi.get('/Vehicle');
-      setVehicles(response.data);
+      const response = await fleetService.getAllVehicles();
+      const allVehicles = response.data || [];
+      
+      if (isTenantAdmin) {
+        const fleetsRes = await fleetService.getAllFleets();
+        const fleets = (fleetsRes.data || []).filter(f => f.tenantId === userTenantId);
+        const fleetIds = new Set(fleets.map(f => f.id));
+        const filteredVehicles = allVehicles.filter(v => fleetIds.has(v.fleetId));
+        setVehicles(filteredVehicles);
+      } else {
+        setVehicles(allVehicles);
+      }
     } catch (error) {
       console.error('Error fetching vehicles:', error);
+    }
+  };
+
+  const fetchTenants = async () => {
+    try {
+      const response = await fleetService.getAllTenants();
+      setTenants(response.data);
+    } catch (error) {
+      console.error('Error fetching tenants:', error);
     }
   };
 
@@ -84,22 +131,24 @@ const ServiceSchedules = () => {
     if (schedule) {
       setSelectedSchedule(schedule);
       setFormData({
+        tenantId: schedule.tenantId || (tenants[0]?.id || ''),
         vehicleId: schedule.vehicleId,
         serviceType: schedule.serviceType,
         scheduledDate: schedule.scheduledDate ? schedule.scheduledDate.split('T')[0] : '',
-        mileageInterval: schedule.mileageInterval || 0,
+        mileageAtService: schedule.mileageAtService || 0,
         description: schedule.description || '',
-        isCompleted: schedule.isCompleted,
+        status: schedule.status || 'Scheduled',
       });
     } else {
       setSelectedSchedule(null);
       setFormData({
+        tenantId: tenants[0]?.id || '',
         vehicleId: '',
         serviceType: 'Regular Maintenance',
         scheduledDate: '',
-        mileageInterval: 0,
+        mileageAtService: 0,
         description: '',
-        isCompleted: false,
+        status: 'Scheduled',
       });
     }
     setOpenDialog(true);
@@ -114,8 +163,9 @@ const ServiceSchedules = () => {
     try {
       const payload = {
         ...formData,
+        tenantId: parseInt(formData.tenantId),
         vehicleId: parseInt(formData.vehicleId),
-        mileageInterval: parseInt(formData.mileageInterval),
+        mileageAtService: parseInt(formData.mileageAtService),
         scheduledDate: new Date(formData.scheduledDate).toISOString(),
       };
 
@@ -138,17 +188,24 @@ const ServiceSchedules = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this service schedule?')) {
-      try {
-        await maintenanceApi.delete(`/ServiceSchedule/${id}`);
-        showSnackbar('Service schedule deleted successfully');
-        fetchSchedules();
-      } catch (error) {
-        showSnackbar('Failed to delete service schedule', 'error');
-        console.error('Error deleting schedule:', error);
-      }
+  const handleDeleteClick = (schedule) => {
+    setDeleteDialog({ open: true, id: schedule.id, name: `${schedule.serviceType} - ${schedule.scheduledDate}` });
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await maintenanceApi.delete(`/ServiceSchedule/${deleteDialog.id}`);
+      showSnackbar('Service schedule deleted successfully');
+      fetchSchedules();
+    } catch (error) {
+      showSnackbar('Failed to delete service schedule', 'error');
+      console.error('Error deleting schedule:', error);
     }
+    setDeleteDialog({ open: false, id: null, name: '' });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ open: false, id: null, name: '' });
   };
 
   const showSnackbar = (message, severity = 'success') => {
@@ -165,8 +222,9 @@ const ServiceSchedules = () => {
       headerName: 'Vehicle',
       width: 150,
       renderCell: (params) => {
+        if (!params.row || params.value === undefined) return '';
         const vehicle = vehicles.find((v) => v.id === params.value);
-        return vehicle?.registrationNumber || params.value;
+        return vehicle?.registrationNumber || params.value || '';
       },
     },
     { field: 'serviceType', headerName: 'Service Type', width: 200 },
@@ -181,10 +239,10 @@ const ServiceSchedules = () => {
       headerName: 'Status',
       width: 130,
       renderCell: (params) => {
-        const completed = params.row.isCompleted;
-        const overdue = !completed && isOverdue(params.row.scheduledDate);
+        const status = params.row.status || 'Scheduled';
+        const overdue = status !== 'Completed' && isOverdue(params.row.scheduledDate);
         
-        if (completed) {
+        if (status === 'Completed') {
           return <Chip label="Completed" color="success" size="small" />;
         } else if (overdue) {
           return <Chip label="Overdue" color="error" size="small" />;
@@ -194,8 +252,8 @@ const ServiceSchedules = () => {
       },
     },
     {
-      field: 'mileageInterval',
-      headerName: 'Mileage Interval',
+      field: 'mileageAtService',
+      headerName: 'Mileage',
       width: 150,
       valueFormatter: (params) => params ? `${params.toLocaleString()} km` : '-',
     },
@@ -216,7 +274,7 @@ const ServiceSchedules = () => {
           <IconButton size="small" onClick={() => handleOpenDialog(params.row)}>
             <EditIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}>
+          <IconButton size="small" color="error" onClick={() => handleDeleteClick(params.row)}>
             <DeleteIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -245,7 +303,7 @@ const ServiceSchedules = () => {
                 Upcoming Services
               </Typography>
               <Typography variant="h4">
-                {schedules.filter(s => !s.isCompleted && !isOverdue(s.scheduledDate)).length}
+                {schedules.filter(s => s.status !== 'Completed' && !isOverdue(s.scheduledDate)).length}
               </Typography>
             </CardContent>
           </Card>
@@ -257,7 +315,7 @@ const ServiceSchedules = () => {
                 Overdue Services
               </Typography>
               <Typography variant="h4">
-                {schedules.filter(s => !s.isCompleted && isOverdue(s.scheduledDate)).length}
+                {schedules.filter(s => s.status !== 'Completed' && isOverdue(s.scheduledDate)).length}
               </Typography>
             </CardContent>
           </Card>
@@ -269,7 +327,7 @@ const ServiceSchedules = () => {
                 Completed Services
               </Typography>
               <Typography variant="h4">
-                {schedules.filter(s => s.isCompleted).length}
+                {schedules.filter(s => s.status === 'Completed').length}
               </Typography>
             </CardContent>
           </Card>
@@ -300,6 +358,24 @@ const ServiceSchedules = () => {
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
+            {user?.roles?.includes('SystemAdmin') && (
+              <Grid item xs={12}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Tenant"
+                  value={formData.tenantId}
+                  onChange={(e) => setFormData({ ...formData, tenantId: e.target.value })}
+                  required
+                >
+                  {tenants.map((tenant) => (
+                    <MenuItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+            )}
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
@@ -347,9 +423,9 @@ const ServiceSchedules = () => {
               <TextField
                 fullWidth
                 type="number"
-                label="Mileage Interval (km)"
-                value={formData.mileageInterval}
-                onChange={(e) => setFormData({ ...formData, mileageInterval: e.target.value })}
+                label="Mileage at Service (km)"
+                value={formData.mileageAtService}
+                onChange={(e) => setFormData({ ...formData, mileageAtService: e.target.value })}
               />
             </Grid>
             <Grid item xs={12}>
@@ -368,6 +444,45 @@ const ServiceSchedules = () => {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button variant="contained" onClick={handleSubmit}>
             {selectedSchedule ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialog.open}
+        onClose={handleDeleteCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 2 }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <DeleteIcon color="error" />
+            <Typography variant="h6" component="span">Confirm Delete</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            Are you sure you want to delete this service schedule?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <strong>{deleteDialog.name}</strong>
+          </Typography>
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This action cannot be undone. The scheduled service will be permanently removed.
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleDeleteCancel} variant="outlined" color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} variant="contained" color="error" startIcon={<DeleteIcon />}>
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

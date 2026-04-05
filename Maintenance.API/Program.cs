@@ -22,6 +22,16 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// ===================================================================
+// MULTI-TENANT CONFIGURATION
+// ===================================================================
+// Register IHttpContextAccessor - required for TenantService to access HTTP context
+builder.Services.AddHttpContextAccessor();
+
+// Register TenantService - extracts TenantId from JWT claims
+builder.Services.AddScoped<ITenantService, TenantService>();
+// ===================================================================
+
 // Register repositories
 builder.Services.AddScoped<IFaultRepository, FaultRepository>();
 builder.Services.AddScoped<IJobCardRepository, JobCardRepository>();
