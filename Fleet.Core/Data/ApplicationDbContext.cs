@@ -215,7 +215,7 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // Seed test users (Note: Using plain text passwords for demo - password = username)
+       
         modelBuilder.Entity<User>().HasData(
             new User 
             { 
