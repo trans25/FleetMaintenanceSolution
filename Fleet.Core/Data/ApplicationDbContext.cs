@@ -1,13 +1,30 @@
 using Fleet.Core.Domain;
+using Fleet.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fleet.Core.Data;
 
+/// <summary>
+/// Application DbContext with multi-tenant support
+/// Automatically filters all queries by TenantId using Global Query Filters
+/// Automatically sets TenantId on entity creation
+/// </summary>
 public class ApplicationDbContext : DbContext
 {
+    private readonly ITenantService? _tenantService;
+
+    // Constructor for runtime use (with DI)
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ITenantService tenantService)
+        : base(options)
+    {
+        _tenantService = tenantService;
+    }
+
+    // Constructor for migrations and design-time (without TenantService)
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
+        _tenantService = null;
     }
 
     public DbSet<Tenant> Tenants { get; set; }
@@ -51,7 +68,7 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Tenant)
                 .WithMany(t => t.Users)
                 .HasForeignKey(e => e.TenantId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasMany(e => e.Roles)
                 .WithMany(r => r.Users)
@@ -78,7 +95,7 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Tenant)
                 .WithMany(t => t.Fleets)
                 .HasForeignKey(e => e.TenantId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Manufacturer configuration
@@ -108,7 +125,7 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Fleet)
                 .WithMany(f => f.Vehicles)
                 .HasForeignKey(e => e.FleetId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(e => e.Manufacturer)
                 .WithMany(m => m.Vehicles)
@@ -191,76 +208,110 @@ public class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Seed data for roles - Fleet Maintenance Role-Permission Matrix
-        modelBuilder.Entity<Role>().HasData(
-            new Role { Id = 1, Name = "SystemAdmin", Description = "System Administrator - Full control over all tenants", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 2, Name = "TenantAdmin", Description = "Tenant Administrator - Full control within own tenant", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 3, Name = "FleetManager", Description = "Fleet Manager - Manage fleets, assign vehicles, schedules, and job cards", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 4, Name = "Technician", Description = "Technician/Mechanic - Update task status, service updates on assigned jobs", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 5, Name = "Staff", Description = "Staff/User - Create service requests or tickets, view assigned jobs", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 6, Name = "Auditor", Description = "Auditor/Read-Only - View reports, logs, and fleet data for auditing", CreatedAt = DateTime.UtcNow },
-            new Role { Id = 7, Name = "Guest", Description = "Guest/Limited User - View only general info and public dashboards", CreatedAt = DateTime.UtcNow }
-        );
+        // ===================================================================
+        // MULTI-TENANT GLOBAL QUERY FILTERS
+        // ===================================================================
+        // Automatically filter all tenant-aware entities by TenantId
+        // This ensures complete data isolation between tenants
+        // Filters are applied to ALL queries automatically by EF Core
+        // ===================================================================
 
-        // Seed default tenant
-        modelBuilder.Entity<Tenant>().HasData(
-            new Tenant 
-            { 
-                Id = 1, 
-                Name = "Demo Fleet Company", 
-                ContactEmail = "admin@demofleet.com", 
-                ContactPhone = "+1-555-0100",
-                IsActive = true, 
-                CreatedAt = DateTime.UtcNow 
+        // Get current tenant ID from TenantService
+        var tenantId = _tenantService?.GetTenantId();
+
+        // Apply global filter to Fleet
+        modelBuilder.Entity<Domain.Fleet>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId.Value);
+
+        // Apply global filter to Vehicle
+        modelBuilder.Entity<Vehicle>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId.Value);
+
+        // Apply global filter to JobCard
+        modelBuilder.Entity<JobCard>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId.Value);
+
+        // Apply global filter to Fault
+        // Apply global filter to Fault
+        modelBuilder.Entity<Fault>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId.Value);
+
+        // Apply global filter to ServiceSchedule
+        modelBuilder.Entity<ServiceSchedule>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId.Value);
+    }
+
+    /// <summary>
+    /// Override SaveChangesAsync to automatically set TenantId on new entities
+    /// This ensures all new entities are automatically associated with the current tenant
+    /// Special handling for System Admins who can manage multiple tenants
+    /// </summary>
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        // Get current tenant ID (null for System Admins)
+        var tenantId = _tenantService?.GetTenantId();
+
+        // Process all added entities
+        foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                // Only set TenantId if it hasn't been set already
+                if (entry.Entity.TenantId == 0)
+                {
+                    if (tenantId.HasValue)
+                    {
+                        // Regular user - auto-assign their TenantId
+                        entry.Entity.TenantId = tenantId.Value;
+                    }
+                    else
+                    {
+                        // System Admin or unauthenticated - require TenantId to be set manually
+                        throw new InvalidOperationException(
+                            $"Cannot create {entry.Entity.GetType().Name} without TenantId. " +
+                            "System Admins must explicitly set TenantId when creating entities.");
+                    }
+                }
+                // For System Admins (tenantId is null), allow creating entities for any tenant
+                // For regular users, verify they're not trying to create data for a different tenant
+                else if (tenantId.HasValue && entry.Entity.TenantId != tenantId.Value)
+                {
+                    throw new UnauthorizedAccessException(
+                        $"Cannot create {entry.Entity.GetType().Name} for a different tenant. " +
+                        "Cross-tenant data manipulation is not allowed.");
+                }
+                // If tenantId is null (System Admin), allow any TenantId - no validation needed
             }
-        );
-
-       
-        modelBuilder.Entity<User>().HasData(
-            new User 
-            { 
-                Id = 1, 
-                TenantId = 1,
-                Username = "admin", 
-                Email = "admin@demofleet.com",
-                PasswordHash = "admin", // In demo, password matches username
-                FirstName = "System",
-                LastName = "Administrator",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow 
-            },
-            new User 
-            { 
-                Id = 2, 
-                TenantId = 1,
-                Username = "manager", 
-                Email = "manager@demofleet.com",
-                PasswordHash = "manager",
-                FirstName = "Fleet",
-                LastName = "Manager",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow 
-            },
-            new User 
-            { 
-                Id = 3, 
-                TenantId = 1,
-                Username = "tech", 
-                Email = "tech@demofleet.com",
-                PasswordHash = "tech",
-                FirstName = "John",
-                LastName = "Technician",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow 
+            else if (entry.State == EntityState.Modified)
+            {
+                // Prevent changing TenantId after creation
+                var originalTenantId = (int)entry.OriginalValues[nameof(ITenantEntity.TenantId)];
+                if (entry.Entity.TenantId != originalTenantId)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot change TenantId for {entry.Entity.GetType().Name}. " +
+                        "TenantId is immutable after creation.");
+                }
+                
+                // For System Admins (tenantId is null), allow modifying entities from any tenant
+                // For regular users, verify they're not trying to modify entities from other tenants
+                if (tenantId.HasValue && entry.Entity.TenantId != tenantId.Value)
+                {
+                    throw new UnauthorizedAccessException(
+                        $"Cannot modify {entry.Entity.GetType().Name} belonging to a different tenant.");
+                }
+                // If tenantId is null (System Admin), allow modifying any tenant's data
             }
-        );
+        }
 
-        // Assign roles to users (many-to-many)
-        modelBuilder.Entity("RoleUser").HasData(
-            new { RolesId = 1, UsersId = 1 }, // admin -> SystemAdmin
-            new { RolesId = 2, UsersId = 1 }, // admin -> TenantAdmin
-            new { RolesId = 3, UsersId = 2 }, // manager -> FleetManager
-            new { RolesId = 4, UsersId = 3 }  // tech -> Technician
-        );
+        return await base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Override SaveChanges (synchronous version)
+    /// </summary>
+    public override int SaveChanges()
+    {
+        return SaveChangesAsync().GetAwaiter().GetResult();
     }
 }

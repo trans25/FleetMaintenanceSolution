@@ -28,7 +28,12 @@ public class AuthService : IAuthService
         if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
             return AuthResult.Failed("Username and password are required");
 
+        // Try to find user by username first, then by email
         var user = await _userRepository.GetByUsernameAsync(username);
+        if (user == null)
+        {
+            user = await _userRepository.GetByEmailAsync(username);
+        }
         
         if (user == null || !user.IsActive)
             return AuthResult.Failed("Invalid credentials");
@@ -42,6 +47,7 @@ public class AuthService : IAuthService
             token,
             user.Username,
             user.Email,
+            user.TenantId,
             user.Roles.Select(r => r.Name).ToList()
         );
     }
@@ -79,11 +85,8 @@ public class AuthService : IAuthService
 
     private bool VerifyPassword(string password, string passwordHash)
     {
-        // In production, use BCrypt.Net-Next or similar:
-        // return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-        
-        // For demo purposes only - DO NOT use in production
-        return password == passwordHash;
+        // Use BCrypt to verify the password
+        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
     }
 }
 
@@ -94,9 +97,10 @@ public class AuthResult
     public string? Token { get; set; }
     public string? Username { get; set; }
     public string? Email { get; set; }
+    public int TenantId { get; set; }
     public List<string> Roles { get; set; } = new();
 
-    public static AuthResult Success(string token, string username, string email, List<string> roles)
+    public static AuthResult Success(string token, string username, string email, int tenantId, List<string> roles)
     {
         return new AuthResult
         {
@@ -104,6 +108,7 @@ public class AuthResult
             Token = token,
             Username = username,
             Email = email,
+            TenantId = tenantId,
             Roles = roles
         };
     }

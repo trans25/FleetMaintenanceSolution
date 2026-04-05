@@ -32,6 +32,7 @@ import {
 } from '@mui/icons-material';
 import fleetService from '../../services/fleetService';
 import maintenanceService from '../../services/maintenanceService';
+import { useAuth } from '../../contexts/AuthContext';
 
 const StatCard = ({ title, value, icon, color, subtitle, trend, onClick }) => (
   <Card 
@@ -92,6 +93,9 @@ const StatCard = ({ title, value, icon, color, subtitle, trend, onClick }) => (
 
 const TenantAdminDashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const userTenantId = user?.tenantId;
+  
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalUsers: 3,
@@ -121,22 +125,36 @@ const TenantAdminDashboard = () => {
         maintenanceService.getOverdueSchedules(),
       ]);
 
+      // Filter data by tenant
+      const allFleets = fleets.data || [];
+      const filteredFleets = allFleets.filter(f => f.tenantId === userTenantId);
+      const fleetIds = new Set(filteredFleets.map(f => f.id));
+      
+      const allVehicles = vehicles.data || [];
+      const filteredVehicles = allVehicles.filter(v => fleetIds.has(v.fleetId));
+      const vehicleIds = new Set(filteredVehicles.map(v => v.id));
+      
+      const filteredOpenFaults = (openFaults.data || []).filter(f => vehicleIds.has(f.vehicleId));
+      const filteredOpenJobCards = (openJobCards.data || []).filter(j => vehicleIds.has(j.vehicleId));
+      const filteredUpcoming = (upcoming.data || []).filter(s => vehicleIds.has(s.vehicleId));
+      const filteredOverdue = (overdue.data || []).filter(s => vehicleIds.has(s.vehicleId));
+
       setStats({
         totalUsers: 3,
-        totalVehicles: vehicles.data?.length || 0,
-        totalFleets: fleets.data?.length || 0,
-        activeVehicles: vehicles.data?.filter(v => v.status === 'Active')?.length || 0,
-        openFaults: openFaults.data?.length || 0,
-        activeJobCards: openJobCards.data?.length || 0,
-        upcomingServices: upcoming.data?.length || 0,
-        overdueServices: overdue.data?.length || 0,
+        totalVehicles: filteredVehicles.length,
+        totalFleets: filteredFleets.length,
+        activeVehicles: filteredVehicles.filter(v => v.status === 'Active').length,
+        openFaults: filteredOpenFaults.length,
+        activeJobCards: filteredOpenJobCards.length,
+        upcomingServices: filteredUpcoming.length,
+        overdueServices: filteredOverdue.length,
         monthlyMaintenanceCost: 0,
       });
 
       // Get vehicles with critical issues
-      const critical = vehicles.data
-        ?.filter(v => v.status === 'Maintenance' || v.status === 'Breakdown')
-        ?.slice(0, 5) || [];
+      const critical = filteredVehicles
+        .filter(v => v.status === 'Maintenance' || v.status === 'Breakdown')
+        .slice(0, 5);
       setCriticalVehicles(critical);
     } catch (error) {
       console.error('Error loading dashboard data:', error);

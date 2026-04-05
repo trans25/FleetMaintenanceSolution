@@ -5,16 +5,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fleet.Core.Repositories;
 
-public class ServiceScheduleRepository : Repository<ServiceSchedule>, IServiceScheduleRepository
+/// <summary>
+/// ServiceSchedule repository with multi-tenant support
+/// </summary>
+public class ServiceScheduleRepository : BaseTenantRepository<ServiceSchedule>, IServiceScheduleRepository
 {
-    public ServiceScheduleRepository(ApplicationDbContext context) : base(context)
+    public ServiceScheduleRepository(ApplicationDbContext context, ITenantService tenantService) 
+        : base(context, tenantService)
     {
     }
 
     public async Task<IEnumerable<ServiceSchedule>> GetSchedulesByVehicleIdAsync(int vehicleId)
     {
         return await _dbSet
-            .Include(s => s.Vehicle)
+            .AsNoTracking()
             .Where(s => s.VehicleId == vehicleId)
             .OrderBy(s => s.ScheduledDate)
             .ToListAsync();
@@ -23,7 +27,7 @@ public class ServiceScheduleRepository : Repository<ServiceSchedule>, IServiceSc
     public async Task<IEnumerable<ServiceSchedule>> GetSchedulesByStatusAsync(string status)
     {
         return await _dbSet
-            .Include(s => s.Vehicle)
+            .AsNoTracking()
             .Where(s => s.Status == status)
             .OrderBy(s => s.ScheduledDate)
             .ToListAsync();
@@ -32,7 +36,7 @@ public class ServiceScheduleRepository : Repository<ServiceSchedule>, IServiceSc
     public async Task<IEnumerable<ServiceSchedule>> GetUpcomingServicesAsync(DateTime date)
     {
         return await _dbSet
-            .Include(s => s.Vehicle)
+            .AsNoTracking()
             .Where(s => s.ScheduledDate >= date && s.Status == "Scheduled")
             .OrderBy(s => s.ScheduledDate)
             .ToListAsync();
@@ -41,14 +45,14 @@ public class ServiceScheduleRepository : Repository<ServiceSchedule>, IServiceSc
     public override async Task<IEnumerable<ServiceSchedule>> GetAllAsync()
     {
         return await _dbSet
-            .Include(s => s.Vehicle)
+            .AsNoTracking()
             .ToListAsync();
     }
 
     public override async Task<ServiceSchedule?> GetByIdAsync(int id)
     {
         return await _dbSet
-            .Include(s => s.Vehicle)
+            .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 }

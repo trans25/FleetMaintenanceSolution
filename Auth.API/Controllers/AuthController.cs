@@ -27,6 +27,7 @@ public class AuthController : ControllerBase
             Token = result.Token!,
             Username = result.Username!,
             Email = result.Email!,
+            TenantId = result.TenantId,
             Roles = result.Roles
         });
     }
@@ -44,5 +45,6 @@ public class LoginResponse
     public string Token { get; set; } = string.Empty;
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public int TenantId { get; set; }
     public List<string> Roles { get; set; } = new();
 }

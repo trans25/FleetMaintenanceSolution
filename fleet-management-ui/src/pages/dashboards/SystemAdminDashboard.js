@@ -323,7 +323,7 @@ const SystemAdminDashboard = () => {
                         >
                           <TableCell>
                             <Typography variant="body2" fontWeight={500}>
-                              {fault.vehicle?.registrationNumber || 'N/A'}
+                              {fault.vehicleId || 'N/A'}
                             </Typography>
                           </TableCell>
                           <TableCell>

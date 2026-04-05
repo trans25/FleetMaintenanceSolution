@@ -292,7 +292,7 @@ const FleetManagerDashboard = () => {
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2">
-                              {job.vehicle?.registrationNumber || 'N/A'}
+                              {job.vehicleId || 'N/A'}
                             </Typography>
                           </TableCell>
                           <TableCell>

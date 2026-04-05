@@ -282,7 +282,7 @@ const TechnicianDashboard = () => {
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2">
-                              {job.vehicle?.registrationNumber || 'N/A'}
+                              {job.vehicleId || 'N/A'}
                             </Typography>
                           </TableCell>
                           <TableCell>
@@ -351,7 +351,7 @@ const TechnicianDashboard = () => {
                             {fault.title}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Vehicle: {fault.vehicle?.registrationNumber || 'N/A'}
+                            Vehicle: {fault.vehicleId || 'N/A'}
                           </Typography>
                           <Box mt={0.5}>
                             <Chip 

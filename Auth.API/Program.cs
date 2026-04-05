@@ -22,6 +22,16 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// ===================================================================
+// MULTI-TENANT CONFIGURATION
+// ===================================================================
+// Register IHttpContextAccessor - required for TenantService to access HTTP context
+builder.Services.AddHttpContextAccessor();
+
+// Register TenantService - extracts TenantId from JWT claims
+builder.Services.AddScoped<ITenantService, Fleet.Core.Services.TenantService>();
+// ===================================================================
+
 // Register repositories needed for authentication
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRoleRepository, RoleRepository>();
@@ -51,6 +61,52 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
     };
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    // Role-based policies aligned with Fleet Maintenance Permission Matrix
+    
+    // Full Access - SystemAdmin only
+    options.AddPolicy("RequireSystemAdmin", policy => 
+        policy.RequireRole("SystemAdmin"));
+    
+    // Admin Access - SystemAdmin and TenantAdmin
+    options.AddPolicy("RequireAdmin", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin"));
+    
+    // Management Access - SystemAdmin, TenantAdmin, FleetManager
+    options.AddPolicy("RequireManager", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager"));
+    
+    // Write Access - SystemAdmin, TenantAdmin, FleetManager, Technician
+    options.AddPolicy("RequireWriteAccess", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager", "Technician"));
+    
+    // Staff Access - SystemAdmin, TenantAdmin, FleetManager, Technician, Staff
+    options.AddPolicy("RequireStaffAccess", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager", "Technician", "Staff"));
+    
+    // Read Access - All roles except Guest
+    options.AddPolicy("RequireReadAccess", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager", "Technician", "Staff", "Auditor"));
+    
+    // View Access - All authenticated users (including Guest)
+    options.AddPolicy("RequireAuthenticated", policy => 
+        policy.RequireAuthenticatedUser());
+    
+    // Specific permission policies based on action type
+    options.AddPolicy("CanDelete", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin"));
+    
+    options.AddPolicy("CanEdit", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager", "Technician"));
+    
+    options.AddPolicy("CanAdd", policy => 
+        policy.RequireRole("SystemAdmin", "TenantAdmin", "FleetManager", "Staff"));
+    
+    options.AddPolicy("CanView", policy => 
+        policy.RequireAuthenticatedUser());
 });
 
 // Configure Swagger/OpenAPI

@@ -1,8 +1,19 @@
+using Fleet.Core.Interfaces;
+
 namespace Fleet.Core.Domain;
 
-public class JobCard
+/// <summary>
+/// JobCard entity with multi-tenant support
+/// </summary>
+public class JobCard : ITenantEntity
 {
     public int Id { get; set; }
+    
+    /// <summary>
+    /// Tenant ID for multi-tenant data isolation
+    /// </summary>
+    public int TenantId { get; set; }
+    
     public int VehicleId { get; set; }
     public int? FaultId { get; set; }
     public string JobNumber { get; set; } = string.Empty;

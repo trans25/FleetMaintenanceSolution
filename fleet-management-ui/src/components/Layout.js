@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -28,19 +28,88 @@ import {
   Warning as FaultIcon,
   Person as PersonIcon,
   Logout as LogoutIcon,
+  Business as TenantIcon,
+  People as UsersIcon,
+  Report as ReportIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 260;
 
-const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { text: 'Fleets', icon: <FleetIcon />, path: '/fleets' },
-  { text: 'Vehicles', icon: <VehicleIcon />, path: '/vehicles' },
-  { text: 'Faults', icon: <FaultIcon />, path: '/faults' },
-  { text: 'Job Cards', icon: <JobCardIcon />, path: '/job-cards' },
-  { text: 'Service Schedules', icon: <ScheduleIcon />, path: '/service-schedules' },
-];
+// Role-based menu configurations
+const getMenuItemsForRole = (roles) => {
+  if (!roles || roles.length === 0) return [];
+  
+  const primaryRole = roles[0];
+  
+  switch (primaryRole) {
+    case 'SystemAdmin':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'Tenants', icon: <TenantIcon />, path: '/tenants' },
+        { text: 'Users', icon: <UsersIcon />, path: '/users' },
+        { text: 'Fleets', icon: <FleetIcon />, path: '/fleets' },
+        { text: 'Vehicles', icon: <VehicleIcon />, path: '/vehicles' },
+        { text: 'Faults', icon: <FaultIcon />, path: '/faults' },
+        { text: 'Job Cards', icon: <JobCardIcon />, path: '/job-cards' },
+        { text: 'Service Schedules', icon: <ScheduleIcon />, path: '/service-schedules' },
+      ];
+    
+    case 'TenantAdmin':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'Users', icon: <UsersIcon />, path: '/users' },
+        { text: 'Fleets', icon: <FleetIcon />, path: '/fleets' },
+        { text: 'Vehicles', icon: <VehicleIcon />, path: '/vehicles' },
+        { text: 'Faults', icon: <FaultIcon />, path: '/faults' },
+        { text: 'Job Cards', icon: <JobCardIcon />, path: '/job-cards' },
+        { text: 'Service Schedules', icon: <ScheduleIcon />, path: '/service-schedules' },
+      ];
+    
+    case 'FleetManager':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'Fleets', icon: <FleetIcon />, path: '/fleets' },
+        { text: 'Vehicles', icon: <VehicleIcon />, path: '/vehicles' },
+        { text: 'Faults', icon: <FaultIcon />, path: '/faults' },
+        { text: 'Job Cards', icon: <JobCardIcon />, path: '/job-cards' },
+        { text: 'Service Schedules', icon: <ScheduleIcon />, path: '/service-schedules' },
+      ];
+    
+    case 'Technician':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'My Jobs', icon: <JobCardIcon />, path: '/job-cards' },
+        { text: 'Faults', icon: <FaultIcon />, path: '/faults' },
+        { text: 'Service Tasks', icon: <ScheduleIcon />, path: '/service-schedules' },
+        { text: 'Work History', icon: <HistoryIcon />, path: '/work-history' },
+      ];
+    
+    case 'Staff':
+    case 'Guest':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'My Vehicle', icon: <VehicleIcon />, path: '/vehicles' },
+        { text: 'Report Issue', icon: <ReportIcon />, path: '/faults' },
+        { text: 'Service History', icon: <HistoryIcon />, path: '/service-schedules' },
+      ];
+    
+    case 'Auditor':
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'Fleets', icon: <FleetIcon />, path: '/fleets' },
+        { text: 'Vehicles', icon: <VehicleIcon />, path: '/vehicles' },
+        { text: 'Reports', icon: <ReportIcon />, path: '/reports' },
+        { text: 'Service History', icon: <HistoryIcon />, path: '/service-schedules' },
+      ];
+    
+    default:
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+      ];
+  }
+};
 
 const Layout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -48,6 +117,11 @@ const Layout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Get menu items based on user role
+  const menuItems = useMemo(() => {
+    return getMenuItemsForRole(user?.roles);
+  }, [user?.roles]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);

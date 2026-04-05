@@ -1,5 +1,6 @@
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
+using Maintenance.API.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -75,10 +76,23 @@ public class JobCardController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = "RequireManager")]
-    public async Task<ActionResult<JobCard>> CreateJobCard([FromBody] JobCard jobCard)
+    public async Task<ActionResult<JobCard>> CreateJobCard([FromBody] CreateJobCardViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+
+        var jobCard = new JobCard
+        {
+            TenantId = model.TenantId,
+            JobNumber = model.JobNumber,
+            VehicleId = model.VehicleId,
+            Description = model.Description,
+            Status = model.Status,
+            Priority = model.Priority,
+            AssignedToUserId = model.AssignedToUserId,
+            EstimatedCost = model.EstimatedCost,
+            ActualCost = model.ActualCost
+        };
 
         var createdJobCard = await _jobCardService.CreateJobCardAsync(jobCard);
         return CreatedAtAction(nameof(GetJobCardById), new { id = createdJobCard.Id }, createdJobCard);
@@ -86,17 +100,31 @@ public class JobCardController : ControllerBase
 
     [HttpPut("{id}")]
     [Authorize(Policy = "CanEdit")]
-    public async Task<ActionResult<JobCard>> UpdateJobCard(int id, [FromBody] JobCard jobCard)
+    public async Task<ActionResult<JobCard>> UpdateJobCard(int id, [FromBody] UpdateJobCardViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (id != jobCard.Id)
+        if (id != model.Id)
             return BadRequest("ID mismatch");
 
         var existingJobCard = await _jobCardService.GetJobCardByIdAsync(id);
         if (existingJobCard == null)
             return NotFound($"Job card with ID {id} not found");
+
+        var jobCard = new JobCard
+        {
+            Id = model.Id,
+            TenantId = model.TenantId,
+            JobNumber = model.JobNumber,
+            VehicleId = model.VehicleId,
+            Description = model.Description,
+            Status = model.Status,
+            Priority = model.Priority,
+            AssignedToUserId = model.AssignedToUserId,
+            EstimatedCost = model.EstimatedCost,
+            ActualCost = model.ActualCost
+        };
 
         var updatedJobCard = await _jobCardService.UpdateJobCardAsync(jobCard);
         return Ok(updatedJobCard);
