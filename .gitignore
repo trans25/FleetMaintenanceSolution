@@ -217,3 +217,25 @@ PublishScripts/
 
 # macOS
 .DS_Store
+
+# Deployment artifacts
+publish/
+publish-azure/
+*.zip
+fix-tenant-admin-tenantid.sql
+
+# Frontend environment files (keep .env.example files)
+fleet-management-ui/.env.local
+fleet-management-ui/.env.production
+fleet-management-ui/.env.azure
+fleet-management-ui/build/
+
+# IIS deployment
+C:/inetpub/FleetMaintenance/
+
+# Azure deployment
+*.parameters.json
+
+# Logs
+*.log
+logs/
