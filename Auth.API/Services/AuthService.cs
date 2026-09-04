@@ -9,7 +9,8 @@ namespace Auth.API.Services;
 
 public interface IAuthService
 {
-    Task<AuthResult> AuthenticateAsync(string username, string password);
+    Task<AuthResult> AuthenticateAsync(string usernameOrEmail, string password);
+    string GenerateJwtToken(User user);
 }
 
 public class AuthService : IAuthService
@@ -23,13 +24,15 @@ public class AuthService : IAuthService
         _configuration = configuration;
     }
 
-    public async Task<AuthResult> AuthenticateAsync(string username, string password)
+    public async Task<AuthResult> AuthenticateAsync(string usernameOrEmail, string password)
     {
-        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-            return AuthResult.Failed("Username and password are required");
+        if (string.IsNullOrEmpty(usernameOrEmail) || string.IsNullOrEmpty(password))
+            return AuthResult.Failed("Username/email and password are required");
 
-        var user = await _userRepository.GetByUsernameAsync(username);
-        
+        // Allow login with either username or email
+        var user = await _userRepository.GetByUsernameAsync(usernameOrEmail)
+                   ?? await _userRepository.GetByEmailAsync(usernameOrEmail);
+
         if (user == null || !user.IsActive)
             return AuthResult.Failed("Invalid credentials");
 
@@ -40,13 +43,14 @@ public class AuthService : IAuthService
 
         return AuthResult.Success(
             token,
+            user.Id,
             user.Username,
             user.Email,
             user.Roles.Select(r => r.Name).ToList()
         );
     }
 
-    private string GenerateJwtToken(User user)
+    public string GenerateJwtToken(User user)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
         var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey is not configured");
@@ -79,11 +83,7 @@ public class AuthService : IAuthService
 
     private bool VerifyPassword(string password, string passwordHash)
     {
-        // In production, use BCrypt.Net-Next or similar:
-        // return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-        
-        // For demo purposes only - DO NOT use in production
-        return password == passwordHash;
+        return Fleet.Core.Security.PasswordHasher.Verify(password, passwordHash);
     }
 }
 
@@ -92,16 +92,18 @@ public class AuthResult
     public bool IsSuccess { get; set; }
     public string? ErrorMessage { get; set; }
     public string? Token { get; set; }
+    public int UserId { get; set; }
     public string? Username { get; set; }
     public string? Email { get; set; }
     public List<string> Roles { get; set; } = new();
 
-    public static AuthResult Success(string token, string username, string email, List<string> roles)
+    public static AuthResult Success(string token, int userId, string username, string email, List<string> roles)
     {
         return new AuthResult
         {
             IsSuccess = true,
             Token = token,
+            UserId = userId,
             Username = username,
             Email = email,
             Roles = roles

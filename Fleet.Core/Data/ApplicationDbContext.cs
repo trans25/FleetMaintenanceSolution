@@ -21,6 +21,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Fault> Faults { get; set; }
     public DbSet<JobCard> JobCards { get; set; }
     public DbSet<JobCardTask> JobCardTasks { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
+    public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -103,8 +105,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Status).HasMaxLength(50);
             entity.Property(e => e.Mileage).HasColumnType("decimal(18,2)");
 
-            entity.HasIndex(e => e.RegistrationNumber).IsUnique();
-            entity.HasIndex(e => e.VIN).IsUnique();
+            entity.HasIndex(e => new { e.TenantId, e.RegistrationNumber }).IsUnique();
+            entity.HasIndex(e => new { e.TenantId, e.VIN }).IsUnique();
 
             entity.HasOne(e => e.Fleet)
                 .WithMany(f => f.Vehicles)
@@ -191,6 +193,37 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(e => e.JobCardId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        // RefreshToken configuration
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Token).IsRequired().HasMaxLength(256);
+            entity.HasIndex(e => e.Token);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PasswordResetToken configuration
+        modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Token).IsRequired().HasMaxLength(256);
+            entity.HasIndex(e => e.Token);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Seed a default tenant so the first user can be registered
+        modelBuilder.Entity<Tenant>().HasData(
+            new Tenant { Id = 1, Name = "Default Tenant", ContactEmail = "admin@default.local", ContactPhone = "", IsActive = true, CreatedAt = DateTime.UtcNow }
+        );
 
         // Seed data for roles - Fleet Maintenance Role-Permission Matrix
         modelBuilder.Entity<Role>().HasData(

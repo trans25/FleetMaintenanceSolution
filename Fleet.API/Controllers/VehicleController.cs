@@ -1,5 +1,7 @@
+using Fleet.Core.Common;
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
+using Fleet.Core.ViewModels.Vehicles;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,86 +21,188 @@ public class VehicleController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<IEnumerable<Vehicle>>> GetAllVehicles()
+    public async Task<ActionResult<PagedResult<VehicleListViewModel>>> GetAllVehicles([FromQuery] PaginationQuery pagination)
     {
-        var vehicles = await _vehicleService.GetAllVehiclesAsync();
-        return Ok(vehicles);
+        var vehicles = ApplyTenantScope(await _vehicleService.GetAllVehiclesAsync());
+        var vms = vehicles.Select(MapToListViewModel);
+        return Ok(PagedResult<VehicleListViewModel>.Create(vms, pagination.Page, pagination.PageSize));
     }
 
     [HttpGet("{id}")]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<Vehicle>> GetVehicleById(int id)
+    public async Task<ActionResult<VehicleDetailViewModel>> GetVehicleById(int id)
     {
         var vehicle = await _vehicleService.GetVehicleByIdAsync(id);
-        return vehicle == null ? NotFound($"Vehicle with ID {id} not found") : Ok(vehicle);
+        if (vehicle == null)
+            return NotFound($"Vehicle with ID {id} not found");
+        if (!CanAccessTenant(vehicle.TenantId))
+            return Forbid();
+        return Ok(MapToDetailViewModel(vehicle));
     }
 
     [HttpGet("registration/{registrationNumber}")]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<Vehicle>> GetVehicleByRegistration(string registrationNumber)
+    public async Task<ActionResult<VehicleDetailViewModel>> GetVehicleByRegistration(string registrationNumber)
     {
         var vehicle = await _vehicleService.GetVehicleByRegistrationAsync(registrationNumber);
-        return vehicle == null ? NotFound($"Vehicle with registration {registrationNumber} not found") : Ok(vehicle);
+        if (vehicle == null)
+            return NotFound($"Vehicle with registration {registrationNumber} not found");
+        if (!CanAccessTenant(vehicle.TenantId))
+            return Forbid();
+        return Ok(MapToDetailViewModel(vehicle));
     }
 
     [HttpGet("vin/{vin}")]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<Vehicle>> GetVehicleByVIN(string vin)
+    public async Task<ActionResult<VehicleDetailViewModel>> GetVehicleByVIN(string vin)
     {
         var vehicle = await _vehicleService.GetVehicleByVINAsync(vin);
-        return vehicle == null ? NotFound($"Vehicle with VIN {vin} not found") : Ok(vehicle);
+        if (vehicle == null)
+            return NotFound($"Vehicle with VIN {vin} not found");
+        if (!CanAccessTenant(vehicle.TenantId))
+            return Forbid();
+        return Ok(MapToDetailViewModel(vehicle));
     }
 
     [HttpGet("fleet/{fleetId}")]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<IEnumerable<Vehicle>>> GetVehiclesByFleetId(int fleetId)
+    public async Task<ActionResult<PagedResult<VehicleListViewModel>>> GetVehiclesByFleetId(int fleetId, [FromQuery] PaginationQuery pagination)
     {
-        var vehicles = await _vehicleService.GetVehiclesByFleetIdAsync(fleetId);
-        return Ok(vehicles);
+        var vehicles = ApplyTenantScope(await _vehicleService.GetVehiclesByFleetIdAsync(fleetId));
+        var vms = vehicles.Select(MapToListViewModel);
+        return Ok(PagedResult<VehicleListViewModel>.Create(vms, pagination.Page, pagination.PageSize));
     }
 
     [HttpGet("status/{status}")]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<IEnumerable<Vehicle>>> GetVehiclesByStatus(string status)
+    public async Task<ActionResult<PagedResult<VehicleListViewModel>>> GetVehiclesByStatus(string status, [FromQuery] PaginationQuery pagination)
     {
-        var vehicles = await _vehicleService.GetVehiclesByStatusAsync(status);
-        return Ok(vehicles);
+        var vehicles = ApplyTenantScope(await _vehicleService.GetVehiclesByStatusAsync(status));
+        var vms = vehicles.Select(MapToListViewModel);
+        return Ok(PagedResult<VehicleListViewModel>.Create(vms, pagination.Page, pagination.PageSize));
     }
 
     [HttpPost]
     [Authorize(Policy = "CanAdd")]
-    public async Task<ActionResult<Vehicle>> CreateVehicle([FromBody] Vehicle vehicle)
+    public async Task<ActionResult<VehicleDetailViewModel>> CreateVehicle([FromBody] CreateVehicleViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var createdVehicle = await _vehicleService.CreateVehicleAsync(vehicle);
-        return CreatedAtAction(nameof(GetVehicleById), new { id = createdVehicle.Id }, createdVehicle);
+        var tenantId = User.GetTenantId();
+        if (tenantId is null && !User.IsSystemAdmin())
+            return Forbid();
+
+        var vehicle = new Vehicle
+        {
+            FleetId = model.FleetId,
+            ManufacturerId = model.ManufacturerId,
+            RegistrationNumber = model.RegistrationNumber,
+            VIN = model.VIN,
+            Model = model.Model,
+            Year = model.Year,
+            Color = model.Color,
+            Mileage = model.Mileage,
+            Status = model.Status,
+            PurchaseDate = model.PurchaseDate,
+            LastServiceDate = model.LastServiceDate,
+            TenantId = tenantId ?? 0
+        };
+
+        var created = await _vehicleService.CreateVehicleAsync(vehicle);
+        return CreatedAtAction(nameof(GetVehicleById), new { id = created.Id }, MapToDetailViewModel(created));
     }
 
     [HttpPut("{id}")]
     [Authorize(Policy = "CanEdit")]
-    public async Task<ActionResult<Vehicle>> UpdateVehicle(int id, [FromBody] Vehicle vehicle)
+    public async Task<ActionResult<VehicleDetailViewModel>> UpdateVehicle(int id, [FromBody] UpdateVehicleViewModel model)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (id != vehicle.Id)
+        if (id != model.Id)
             return BadRequest("ID mismatch");
 
-        var existingVehicle = await _vehicleService.GetVehicleByIdAsync(id);
-        if (existingVehicle == null)
+        var existing = await _vehicleService.GetVehicleByIdAsync(id);
+        if (existing == null)
             return NotFound($"Vehicle with ID {id} not found");
+        if (!CanAccessTenant(existing.TenantId))
+            return Forbid();
 
-        var updatedVehicle = await _vehicleService.UpdateVehicleAsync(vehicle);
-        return Ok(updatedVehicle);
+        existing.FleetId = model.FleetId;
+        existing.ManufacturerId = model.ManufacturerId;
+        existing.RegistrationNumber = model.RegistrationNumber;
+        existing.VIN = model.VIN;
+        existing.Model = model.Model;
+        existing.Year = model.Year;
+        existing.Color = model.Color;
+        existing.Mileage = model.Mileage;
+        existing.Status = model.Status;
+        existing.PurchaseDate = model.PurchaseDate;
+        existing.LastServiceDate = model.LastServiceDate;
+
+        var updated = await _vehicleService.UpdateVehicleAsync(existing);
+        return Ok(MapToDetailViewModel(updated));
     }
 
     [HttpDelete("{id}")]
     [Authorize(Policy = "CanDelete")]
     public async Task<ActionResult> DeleteVehicle(int id)
     {
+        var existing = await _vehicleService.GetVehicleByIdAsync(id);
+        if (existing == null)
+            return NotFound($"Vehicle with ID {id} not found");
+        if (!CanAccessTenant(existing.TenantId))
+            return Forbid();
+
         var result = await _vehicleService.DeleteVehicleAsync(id);
         return result ? NoContent() : NotFound($"Vehicle with ID {id} not found");
     }
+
+    // ----- Tenant isolation helpers -----
+
+    private bool CanAccessTenant(int tenantId)
+        => User.IsSystemAdmin() || User.GetTenantId() == tenantId;
+
+    private IEnumerable<Vehicle> ApplyTenantScope(IEnumerable<Vehicle> vehicles)
+    {
+        if (User.IsSystemAdmin())
+            return vehicles;
+        var tenantId = User.GetTenantId();
+        return tenantId is null ? Enumerable.Empty<Vehicle>() : vehicles.Where(v => v.TenantId == tenantId);
+    }
+
+    // ----- Mapping helpers -----
+
+    private static VehicleListViewModel MapToListViewModel(Vehicle v) => new()
+    {
+        Id = v.Id,
+        RegistrationNumber = v.RegistrationNumber,
+        Model = v.Model,
+        Year = v.Year,
+        Status = v.Status,
+        Mileage = v.Mileage,
+        ManufacturerName = v.Manufacturer?.Name,
+        FleetName = v.Fleet?.Name
+    };
+
+    private static VehicleDetailViewModel MapToDetailViewModel(Vehicle v) => new()
+    {
+        Id = v.Id,
+        FleetId = v.FleetId,
+        FleetName = v.Fleet?.Name,
+        ManufacturerId = v.ManufacturerId,
+        ManufacturerName = v.Manufacturer?.Name,
+        RegistrationNumber = v.RegistrationNumber,
+        VIN = v.VIN,
+        Model = v.Model,
+        Year = v.Year,
+        Color = v.Color,
+        Mileage = v.Mileage,
+        Status = v.Status,
+        PurchaseDate = v.PurchaseDate,
+        LastServiceDate = v.LastServiceDate,
+        CreatedAt = v.CreatedAt,
+        UpdatedAt = v.UpdatedAt
+    };
 }

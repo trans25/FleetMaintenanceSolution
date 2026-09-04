@@ -2,13 +2,22 @@ using Fleet.Core.Data;
 using Fleet.Core.Interfaces;
 using Fleet.Core.Repositories;
 using Fleet.Core.Services;
+using Fleet.Core.Common;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Structured logging with Serilog
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
 
 // Add services to the container
 builder.Services.AddControllers()
@@ -31,6 +40,11 @@ builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 // Register services
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IFleetService, FleetService>();
+builder.Services.AddScoped<IManufacturerService, ManufacturerService>();
+
+// API versioning and health checks
+builder.Services.AddPlatformApiVersioning();
+builder.Services.AddPlatformHealthChecks();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -139,17 +153,33 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Add CORS
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("AllowConfiguredOrigins", policy =>
     {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        }
     });
 });
 
 var app = builder.Build();
+
+// Global exception handling -> ProblemDetails
+app.UseFleetExceptionHandling();
+
+// Request logging
+app.UseSerilogRequestLogging();
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
@@ -163,11 +193,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+app.UseCors("AllowConfiguredOrigins");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapPlatformHealthChecks();
 
 app.Run();

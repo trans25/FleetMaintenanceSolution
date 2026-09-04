@@ -1,3 +1,4 @@
+using Fleet.Core.Common;
 using Fleet.Core.Domain;
 using Fleet.Core.Interfaces;
 
@@ -45,13 +46,26 @@ public class ServiceScheduleService : IServiceScheduleService
     public async Task<ServiceSchedule> CreateScheduleAsync(ServiceSchedule schedule)
     {
         schedule.CreatedAt = DateTime.UtcNow;
-        schedule.Status = "Scheduled";
+        schedule.Status = MaintenanceStatuses.ServiceSchedule.Scheduled;
         return await _scheduleRepository.AddAsync(schedule);
     }
 
     public async Task<ServiceSchedule> UpdateScheduleAsync(ServiceSchedule schedule)
     {
+        var existing = await _scheduleRepository.GetByIdAsync(schedule.Id)
+            ?? throw new KeyNotFoundException($"Service schedule with ID {schedule.Id} not found.");
+
+        MaintenanceStatuses.EnsureTransitionAllowed(
+            MaintenanceStatuses.ServiceSchedule.Transitions, existing.Status, schedule.Status, "service schedule");
+
         schedule.UpdatedAt = DateTime.UtcNow;
+
+        if (string.Equals(schedule.Status, MaintenanceStatuses.ServiceSchedule.Completed, StringComparison.OrdinalIgnoreCase)
+            && schedule.CompletedDate == null)
+        {
+            schedule.CompletedDate = DateTime.UtcNow;
+        }
+
         return await _scheduleRepository.UpdateAsync(schedule);
     }
 
