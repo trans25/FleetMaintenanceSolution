@@ -23,6 +23,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<JobCardTask> JobCardTasks { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
+    public DbSet<Notification> Notifications { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -192,6 +193,21 @@ public class ApplicationDbContext : DbContext
                 .WithMany(j => j.Tasks)
                 .HasForeignKey(e => e.JobCardId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Notification configuration
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.EntityType).HasMaxLength(50);
+            entity.Property(e => e.DedupeKey).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Channel).HasMaxLength(20);
+            entity.Property(e => e.Recipient).HasMaxLength(200);
+            entity.Property(e => e.Subject).HasMaxLength(300);
+            entity.Property(e => e.Status).HasMaxLength(20);
+
+            entity.HasIndex(e => e.DedupeKey).IsUnique();
         });
 
         // RefreshToken configuration

@@ -44,6 +44,18 @@ public static class PlatformServiceExtensions
     }
 
     /// <summary>
+    /// Registers the fleet automation services (rule evaluation + notification
+    /// dispatch/audit). Requires <see cref="AddPlatformEmail"/> and a registered
+    /// <c>ApplicationDbContext</c>.
+    /// </summary>
+    public static IServiceCollection AddFleetAutomation(this IServiceCollection services)
+    {
+        services.AddScoped<Automation.INotificationService, Automation.NotificationService>();
+        services.AddScoped<Automation.IFleetAlertService, Automation.FleetAlertService>();
+        return services;
+    }
+
+    /// <summary>
     /// Maps /health (liveness) and /health/ready (readiness incl. DB).
     /// </summary>
     public static void MapPlatformHealthChecks(this WebApplication app)

@@ -21,11 +21,29 @@ public class VehicleController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<PagedResult<VehicleListViewModel>>> GetAllVehicles([FromQuery] PaginationQuery pagination)
+    public async Task<ActionResult<PagedResult<VehicleListViewModel>>> GetAllVehicles([FromQuery] VehicleQuery query)
     {
         var vehicles = ApplyTenantScope(await _vehicleService.GetAllVehiclesAsync());
-        var vms = vehicles.Select(MapToListViewModel);
-        return Ok(PagedResult<VehicleListViewModel>.Create(vms, pagination.Page, pagination.PageSize));
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            vehicles = vehicles.Where(v =>
+                string.Equals(v.Status, query.Status, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+            vehicles = vehicles.Where(v =>
+                (v.RegistrationNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (v.Model?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (v.VIN?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var vms = vehicles
+            .OrderBy(v => v.RegistrationNumber)
+            .Select(MapToListViewModel);
+        return Ok(PagedResult<VehicleListViewModel>.Create(vms, query.Page, query.PageSize));
     }
 
     [HttpGet("{id}")]

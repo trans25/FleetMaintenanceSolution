@@ -159,6 +159,18 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply pending migrations and seed baseline/demo data on startup.
+// Skipped under the test host to keep integration tests isolated.
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var seedLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("DataSeeder");
+    await db.Database.MigrateAsync();
+    await Fleet.Core.Data.DataSeeder.SeedAsync(db, seedLogger);
+}
+
 // Global exception handling -> ProblemDetails
 app.UseFleetExceptionHandling();
 
