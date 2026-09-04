@@ -9,7 +9,7 @@ namespace Auth.API.Services;
 
 public interface IAuthService
 {
-    Task<AuthResult> AuthenticateAsync(string username, string password);
+    Task<AuthResult> AuthenticateAsync(string usernameOrEmail, string password);
 }
 
 public class AuthService : IAuthService
@@ -23,13 +23,15 @@ public class AuthService : IAuthService
         _configuration = configuration;
     }
 
-    public async Task<AuthResult> AuthenticateAsync(string username, string password)
+    public async Task<AuthResult> AuthenticateAsync(string usernameOrEmail, string password)
     {
-        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-            return AuthResult.Failed("Username and password are required");
+        if (string.IsNullOrEmpty(usernameOrEmail) || string.IsNullOrEmpty(password))
+            return AuthResult.Failed("Username/email and password are required");
 
-        var user = await _userRepository.GetByUsernameAsync(username);
-        
+        // Allow login with either username or email
+        var user = await _userRepository.GetByUsernameAsync(usernameOrEmail)
+                   ?? await _userRepository.GetByEmailAsync(usernameOrEmail);
+
         if (user == null || !user.IsActive)
             return AuthResult.Failed("Invalid credentials");
 
@@ -79,11 +81,7 @@ public class AuthService : IAuthService
 
     private bool VerifyPassword(string password, string passwordHash)
     {
-        // In production, use BCrypt.Net-Next or similar:
-        // return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-        
-        // For demo purposes only - DO NOT use in production
-        return password == passwordHash;
+        return Fleet.Core.Security.PasswordHasher.Verify(password, passwordHash);
     }
 }
 

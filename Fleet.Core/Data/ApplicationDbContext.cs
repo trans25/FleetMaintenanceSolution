@@ -192,6 +192,11 @@ public class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // Seed a default tenant so the first user can be registered
+        modelBuilder.Entity<Tenant>().HasData(
+            new Tenant { Id = 1, Name = "Default Tenant", ContactEmail = "admin@default.local", ContactPhone = "", IsActive = true, CreatedAt = DateTime.UtcNow }
+        );
+
         // Seed data for roles - Fleet Maintenance Role-Permission Matrix
         modelBuilder.Entity<Role>().HasData(
             new Role { Id = 1, Name = "SystemAdmin", Description = "System Administrator - Full control over all tenants", CreatedAt = DateTime.UtcNow },

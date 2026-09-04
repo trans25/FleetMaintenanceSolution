@@ -79,11 +79,7 @@ public class AuthService : IAuthService
 
     private bool VerifyPassword(string password, string passwordHash)
     {
-         // TODO: Elias to unComment it out   in production
-        // return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-        
-        // TODO: Elias to Comment it out   in production
-        return password == passwordHash;
+        return Fleet.Core.Security.PasswordHasher.Verify(password, passwordHash);
     }
 }
 
