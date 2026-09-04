@@ -5,12 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <PackageId>Fleet.Core</PackageId>
+    <PackageId>FleetPlatform.DataAccess</PackageId>
+    <AssemblyName>Fleet.Core</AssemblyName>
+    <RootNamespace>Fleet.Core</RootNamespace>
     <Version>1.0.0</Version>
     <Authors>Fleet Maintenance Team</Authors>
     <Company>Fleet Maintenance</Company>
-    <Description>Core domain models, repositories, and data access layer for Fleet Maintenance System</Description>
-    <PackageTags>fleet;maintenance;domain;repository</PackageTags>
+    <Description>Shared data-access layer (domain models, EF Core DbContext with multi-tenant isolation and soft-delete, and repositories) for the Fleet Health &amp; Compliance Assurance Platform.</Description>
+    <PackageTags>fleet;maintenance;compliance;multitenant;domain;repository;dataaccess</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

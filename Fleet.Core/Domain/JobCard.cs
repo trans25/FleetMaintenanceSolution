@@ -1,8 +1,7 @@
 namespace Fleet.Core.Domain;
 
-public class JobCard
+public class JobCard : BaseTenantEntity
 {
-    public int Id { get; set; }
     public int VehicleId { get; set; }
     public int? FaultId { get; set; }
     public string JobNumber { get; set; } = string.Empty;
@@ -16,8 +15,6 @@ public class JobCard
     public DateTime? CompletedDate { get; set; }
     public decimal EstimatedCost { get; set; }
     public decimal? ActualCost { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
 
     // Navigation properties
     public Vehicle Vehicle { get; set; } = null!;

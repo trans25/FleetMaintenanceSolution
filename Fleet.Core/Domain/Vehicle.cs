@@ -1,8 +1,11 @@
 namespace Fleet.Core.Domain;
 
-public class Vehicle
+/// <summary>
+/// Vehicle entity with multi-tenant support
+/// Each vehicle belongs to a specific tenant for data isolation
+/// </summary>
+public class Vehicle : BaseTenantEntity
 {
-    public int Id { get; set; }
     public int FleetId { get; set; }
     public int ManufacturerId { get; set; }
     public string RegistrationNumber { get; set; } = string.Empty;
@@ -14,8 +17,6 @@ public class Vehicle
     public string Status { get; set; } = "Active"; // Active, InService, OutOfService
     public DateTime PurchaseDate { get; set; }
     public DateTime? LastServiceDate { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
 
     // Navigation properties
     public Fleet Fleet { get; set; } = null!;
