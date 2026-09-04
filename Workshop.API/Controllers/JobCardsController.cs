@@ -108,6 +108,32 @@ public class JobCardsController : ControllerBase
         return result ? NoContent() : NotFound($"Job card with ID {id} not found");
     }
 
+    // Workflow (real-life maintenance lifecycle) endpoints
+
+    [HttpPost("{id}/start")]
+    [Authorize(Policy = "CanEdit")]
+    public async Task<ActionResult<JobCardDetailViewModel>> Start(int id, [FromBody] StartJobCardViewModel? model)
+    {
+        var updated = await _jobCardService.StartJobCardAsync(id, model?.AssignedToUserId);
+        return Ok(MapToDetailViewModel(updated));
+    }
+
+    [HttpPost("{id}/complete")]
+    [Authorize(Policy = "CanEdit")]
+    public async Task<ActionResult<JobCardDetailViewModel>> Complete(int id, [FromBody] CompleteJobCardViewModel? model)
+    {
+        var updated = await _jobCardService.CompleteJobCardAsync(id, model?.ActualCost);
+        return Ok(MapToDetailViewModel(updated));
+    }
+
+    [HttpPost("{id}/cancel")]
+    [Authorize(Policy = "CanEdit")]
+    public async Task<ActionResult<JobCardDetailViewModel>> Cancel(int id)
+    {
+        var updated = await _jobCardService.CancelJobCardAsync(id);
+        return Ok(MapToDetailViewModel(updated));
+    }
+
     private static JobCardListViewModel MapToListViewModel(JobCard jobCard) => new()
     {
         Id = jobCard.Id,

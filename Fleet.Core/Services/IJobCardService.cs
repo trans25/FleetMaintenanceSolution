@@ -14,7 +14,13 @@ public interface IJobCardService
     Task<JobCard> CreateJobCardAsync(JobCard jobCard);
     Task<JobCard> UpdateJobCardAsync(JobCard jobCard);
     Task<bool> DeleteJobCardAsync(int id);
-    
+
+    // Workflow (real-life maintenance lifecycle) methods
+    Task<JobCard> StartJobCardAsync(int id, int? assignedToUserId = null);
+    Task<JobCard> CompleteJobCardAsync(int id, decimal? actualCost = null);
+    Task<JobCard> CancelJobCardAsync(int id);
+    Task<JobCard> ConvertFaultToJobCardAsync(int faultId, int? assignedToUserId = null, decimal estimatedCost = 0);
+
     // JobCardTask methods
     Task<IEnumerable<JobCardTask>> GetTasksByJobCardIdAsync(int jobCardId);
     Task<JobCardTask> AddTaskToJobCardAsync(int jobCardId, JobCardTask task);

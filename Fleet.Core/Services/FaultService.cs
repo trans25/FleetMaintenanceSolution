@@ -1,3 +1,4 @@
+using Fleet.Core.Common;
 using Fleet.Core.Domain;
 using Fleet.Core.Interfaces;
 
@@ -50,16 +51,23 @@ public class FaultService : IFaultService
     {
         fault.CreatedAt = DateTime.UtcNow;
         fault.ReportedDate = DateTime.UtcNow;
-        fault.Status = "Reported";
+        fault.Status = MaintenanceStatuses.Fault.Reported;
         return await _faultRepository.AddAsync(fault);
     }
 
     public async Task<Fault> UpdateFaultAsync(Fault fault)
     {
+        var existing = await _faultRepository.GetByIdAsync(fault.Id)
+            ?? throw new KeyNotFoundException($"Fault with ID {fault.Id} not found.");
+
+        MaintenanceStatuses.EnsureTransitionAllowed(
+            MaintenanceStatuses.Fault.Transitions, existing.Status, fault.Status, "fault");
+
         fault.UpdatedAt = DateTime.UtcNow;
-        
+
         // If marking as resolved, set the resolved date
-        if (fault.Status == "Resolved" && fault.ResolvedDate == null)
+        if (string.Equals(fault.Status, MaintenanceStatuses.Fault.Resolved, StringComparison.OrdinalIgnoreCase)
+            && fault.ResolvedDate == null)
         {
             fault.ResolvedDate = DateTime.UtcNow;
         }

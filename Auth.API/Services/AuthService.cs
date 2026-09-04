@@ -10,6 +10,7 @@ namespace Auth.API.Services;
 public interface IAuthService
 {
     Task<AuthResult> AuthenticateAsync(string usernameOrEmail, string password);
+    string GenerateJwtToken(User user);
 }
 
 public class AuthService : IAuthService
@@ -42,13 +43,14 @@ public class AuthService : IAuthService
 
         return AuthResult.Success(
             token,
+            user.Id,
             user.Username,
             user.Email,
             user.Roles.Select(r => r.Name).ToList()
         );
     }
 
-    private string GenerateJwtToken(User user)
+    public string GenerateJwtToken(User user)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
         var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey is not configured");
@@ -90,16 +92,18 @@ public class AuthResult
     public bool IsSuccess { get; set; }
     public string? ErrorMessage { get; set; }
     public string? Token { get; set; }
+    public int UserId { get; set; }
     public string? Username { get; set; }
     public string? Email { get; set; }
     public List<string> Roles { get; set; } = new();
 
-    public static AuthResult Success(string token, string username, string email, List<string> roles)
+    public static AuthResult Success(string token, int userId, string username, string email, List<string> roles)
     {
         return new AuthResult
         {
             IsSuccess = true,
             Token = token,
+            UserId = userId,
             Username = username,
             Email = email,
             Roles = roles

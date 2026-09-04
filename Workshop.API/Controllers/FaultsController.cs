@@ -12,10 +12,12 @@ namespace Workshop.API.Controllers;
 public class FaultsController : ControllerBase
 {
     private readonly IFaultService _faultService;
+    private readonly IJobCardService _jobCardService;
 
-    public FaultsController(IFaultService faultService)
+    public FaultsController(IFaultService faultService, IJobCardService jobCardService)
     {
         _faultService = faultService;
+        _jobCardService = jobCardService;
     }
 
     [HttpGet]
@@ -104,6 +106,37 @@ public class FaultsController : ControllerBase
 
         var updated = await _faultService.UpdateFaultAsync(existing);
         return Ok(MapToDetailViewModel(updated));
+    }
+
+    [HttpPost("{id}/convert-to-jobcard")]
+    [Authorize(Policy = "CanEdit")]
+    public async Task<ActionResult> ConvertToJobCard(int id, [FromBody] ConvertFaultToJobCardViewModel? model)
+    {
+        try
+        {
+            var jobCard = await _jobCardService.ConvertFaultToJobCardAsync(
+                id,
+                model?.AssignedToUserId,
+                model?.EstimatedCost ?? 0);
+
+            return CreatedAtAction(nameof(GetById), new { id = jobCard.FaultId }, new
+            {
+                jobCardId = jobCard.Id,
+                jobNumber = jobCard.JobNumber,
+                faultId = id,
+                vehicleId = jobCard.VehicleId,
+                priority = jobCard.Priority,
+                status = jobCard.Status
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
     }
 
     [HttpDelete("{id}")]
