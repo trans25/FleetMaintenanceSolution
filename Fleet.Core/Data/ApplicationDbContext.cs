@@ -1,3 +1,4 @@
+using System.Reflection;
 using Fleet.Core.Domain;
 using Microsoft.EntityFrameworkCore;
 
@@ -201,5 +202,68 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 6, Name = "Auditor", Description = "Auditor/Read-Only - View reports, logs, and fleet data for auditing", CreatedAt = DateTime.UtcNow },
             new Role { Id = 7, Name = "Guest", Description = "Guest/Limited User - View only general info and public dashboards", CreatedAt = DateTime.UtcNow }
         );
+
+        // Apply a global soft-delete query filter to every BaseEntity-derived type
+        // so that rows flagged IsDeleted are automatically excluded from queries.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                SetSoftDeleteQueryFilterMethod
+                    .MakeGenericMethod(entityType.ClrType)
+                    .Invoke(null, new object[] { modelBuilder });
+            }
+        }
+    }
+
+    private static readonly MethodInfo SetSoftDeleteQueryFilterMethod =
+        typeof(ApplicationDbContext).GetMethod(nameof(SetSoftDeleteQueryFilter),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static void SetSoftDeleteQueryFilter<TEntity>(ModelBuilder modelBuilder)
+        where TEntity : BaseEntity
+    {
+        modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+    }
+
+    public override int SaveChanges()
+    {
+        ApplyAuditAndSoftDelete();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyAuditAndSoftDelete();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Automatically maintains audit timestamps and converts hard deletes
+    /// into soft deletes for all <see cref="BaseEntity"/> instances.
+    /// </summary>
+    private void ApplyAuditAndSoftDelete()
+    {
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    if (entry.Entity.CreatedAt == default)
+                        entry.Entity.CreatedAt = DateTime.UtcNow;
+                    break;
+
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+
+                case EntityState.Deleted:
+                    // Convert a hard delete into a soft delete
+                    entry.State = EntityState.Modified;
+                    entry.Entity.IsDeleted = true;
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+            }
+        }
     }
 }
