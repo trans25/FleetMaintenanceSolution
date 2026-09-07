@@ -20,6 +20,7 @@ import {
   CalendarClock24Regular,
   ClipboardTaskListLtr24Regular,
   DataBarVertical24Regular,
+  DocumentBulletList24Regular,
   MailInbox24Regular,
   Navigation24Regular,
   SignOut24Regular,
@@ -27,9 +28,10 @@ import {
   VehicleTruck24Regular,
   Home24Regular,
   Person24Regular,
-  Building24Regular
+  Building24Regular,
+  Wrench24Regular
 } from '@fluentui/react-icons';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth, ADMIN_ROLES, MANAGER_ROLES, TECHNICIAN_ROLES } from '../auth/AuthContext';
 
 const useStyles = makeStyles({
   root: {
@@ -95,14 +97,16 @@ interface NavLink {
 
 const links: NavLink[] = [
   { to: '/', label: 'Dashboard', icon: <Home24Regular /> },
-  { to: '/fleets', label: 'Fleets', icon: <VehicleTruck24Regular /> },
+  { to: '/fleets', label: 'Fleets', icon: <VehicleTruck24Regular />, roles: MANAGER_ROLES },
   { to: '/vehicles', label: 'Vehicles', icon: <VehicleCar24Regular /> },
+  { to: '/manufacturers', label: 'Manufacturers', icon: <Wrench24Regular />, roles: MANAGER_ROLES },
   { to: '/faults', label: 'Faults', icon: <Alert24Regular /> },
-  { to: '/jobcards', label: 'Job Cards', icon: <ClipboardTaskListLtr24Regular /> },
-  { to: '/service-schedules', label: 'Service Schedules', icon: <CalendarClock24Regular /> },
+  { to: '/jobcards', label: 'Job Cards', icon: <ClipboardTaskListLtr24Regular />, roles: TECHNICIAN_ROLES },
+  { to: '/service-schedules', label: 'Service Schedules', icon: <CalendarClock24Regular />, roles: TECHNICIAN_ROLES },
+  { to: '/compliance', label: 'Compliance', icon: <DocumentBulletList24Regular />, roles: MANAGER_ROLES },
   { to: '/notifications', label: 'Notifications', icon: <MailInbox24Regular /> },
-  { to: '/reports', label: 'Reports', icon: <DataBarVertical24Regular /> },
-  { to: '/administration', label: 'Administration', icon: <Building24Regular />, roles: ['SystemAdmin'] }
+  { to: '/reports', label: 'Reports', icon: <DataBarVertical24Regular />, roles: MANAGER_ROLES },
+  { to: '/administration', label: 'Administration', icon: <Building24Regular />, roles: ADMIN_ROLES }
 ];
 
 export default function AppLayout() {

@@ -29,7 +29,7 @@ const useStyles = makeStyles({
   label: { color: tokens.colorNeutralForeground3 }
 });
 
-const money = (v: number) => `$${(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+const money = (v: number) => `R ${(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
 export default function ReportsPage() {
   const styles = useStyles();

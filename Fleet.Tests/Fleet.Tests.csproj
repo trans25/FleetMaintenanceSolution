@@ -21,6 +21,7 @@
   <ItemGroup>
 	<ProjectReference Include="..\Fleet.Core\Fleet.Core.csproj" />
 	<ProjectReference Include="..\Auth.API\Auth.API.csproj" />
+	<ProjectReference Include="..\Workshop.API\Workshop.API.csproj" />
   </ItemGroup>
 
 </Project>

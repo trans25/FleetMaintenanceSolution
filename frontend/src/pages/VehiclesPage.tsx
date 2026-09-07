@@ -24,14 +24,15 @@ import {
   createTableColumn,
   type TableColumnDefinition
 } from '@fluentui/react-components';
-import { Add24Regular } from '@fluentui/react-icons';
+import { Add24Regular, ArrowUpload24Regular } from '@fluentui/react-icons';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataToolbar } from '../components/DataToolbar';
 import { Pagination } from '../components/Pagination';
 import { RowActions } from '../components/RowActions';
+import { ImportDialog } from '../components/ImportDialog';
 import { useServerListView } from '../hooks/useServerListView';
-import { createVehicle, deleteVehicle, queryVehicles } from '../services/vehicleService';
+import { createVehicle, deleteVehicle, importVehicles, queryVehicles } from '../services/vehicleService';
 import { getFleets } from '../services/fleetService';
 import { getManufacturers } from '../services/manufacturerService';
 import { apiErrorMessage } from '../api/client';
@@ -44,6 +45,7 @@ export default function VehiclesPage() {
   const [fleets, setFleets] = useState<Fleet[]>([]);
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Server-side search + filter + pagination so the list scales to large fleets.
   const view = useServerListView<Vehicle>({
@@ -136,14 +138,19 @@ export default function VehiclesPage() {
         title="Vehicles"
         subtitle="Every asset in your fleets, with live maintenance status."
         actions={
-          <Button
-            appearance="primary"
-            icon={<Add24Regular />}
-            onClick={() => setOpen(true)}
-            disabled={fleets.length === 0 || manufacturers.length === 0}
-          >
-            Add vehicle
-          </Button>
+          <>
+            <Button icon={<ArrowUpload24Regular />} onClick={() => setImportOpen(true)}>
+              Import CSV
+            </Button>
+            <Button
+              appearance="primary"
+              icon={<Add24Regular />}
+              onClick={() => setOpen(true)}
+              disabled={fleets.length === 0 || manufacturers.length === 0}
+            >
+              Add vehicle
+            </Button>
+          </>
         }
       />
       {error && (
@@ -183,6 +190,15 @@ export default function VehiclesPage() {
           setOpen(false);
           void load();
         }}
+      />
+
+      <ImportDialog
+        open={importOpen}
+        title="Import vehicles"
+        columnsHint="RegistrationNumber,VIN,Model,Year,FleetId,ManufacturerId,Color,Mileage,Status"
+        onImport={importVehicles}
+        onClose={() => setImportOpen(false)}
+        onImported={() => void load()}
       />
     </>
   );

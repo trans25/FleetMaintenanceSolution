@@ -11,18 +11,29 @@ import {
 import {
   Alert24Regular,
   ClipboardTaskListLtr24Regular,
+  DocumentBulletList24Regular,
+  Building24Regular,
+  People24Regular,
   VehicleCar24Regular,
   VehicleTruck24Regular
 } from '@fluentui/react-icons';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth, MANAGER_ROLES, TECHNICIAN_ROLES } from '../auth/AuthContext';
 import { getFleets } from '../services/fleetService';
 import { getVehicles } from '../services/vehicleService';
 import { getFaults } from '../services/faultService';
 import { getJobCards } from '../services/jobCardService';
 import { getOverdueSchedules, getUpcomingSchedules } from '../services/serviceScheduleService';
-import type { Fault, ServiceSchedule } from '../api/types';
+import { queryComplianceDocuments } from '../services/complianceService';
+import {
+  getPlatformSummary,
+  getMyWorkSummary,
+  getTenantSummary,
+  type PlatformDashboardSummary,
+  type TechnicianDashboardSummary
+} from '../services/dashboardService';
+import type { ComplianceDocument, Fault, ServiceSchedule } from '../api/types';
 
 const useStyles = makeStyles({
   grid: {
@@ -64,6 +75,7 @@ interface Stats {
   vehicles: number;
   openFaults: number;
   activeJobs: number;
+  complianceAlerts: number;
 }
 
 function fmtDate(d?: string | null): string {
@@ -75,24 +87,197 @@ function fmtDate(d?: string | null): string {
 export default function DashboardPage() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [upcoming, setUpcoming] = useState<ServiceSchedule[]>([]);
-  const [overdue, setOverdue] = useState<ServiceSchedule[]>([]);
-  const [recentFaults, setRecentFaults] = useState<Fault[]>([]);
+  const { user, hasAnyRole } = useAuth();
+
+  const isSystemAdmin = hasAnyRole('SystemAdmin');
+  // Managers and tenant admins get the full operational dashboard.
+  const isManager = !isSystemAdmin && hasAnyRole(...MANAGER_ROLES);
+  // Technicians/mechanics get a work-focused view.
+  const isTechnician = !isSystemAdmin && !isManager && hasAnyRole(...TECHNICIAN_ROLES);
+
+  if (isSystemAdmin) {
+    return <SystemAdminDashboard />;
+  }
+  if (isTechnician) {
+    return <TechnicianDashboard username={user?.username ?? ''} />;
+  }
+  if (!isManager) {
+    return <StaffDashboard username={user?.username ?? ''} />;
+  }
+
+  return <ManagerDashboard username={user?.username ?? ''} />;
+}
+
+// --- System Admin (platform-wide) dashboard -------------------------------
+function SystemAdminDashboard() {
+  const styles = useStyles();
+  const navigate = useNavigate();
+  const [summary, setSummary] = useState<PlatformDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [fleets, vehicles, faults, jobs, up, over] = await Promise.all([
+        const data = await getPlatformSummary();
+        if (mounted) setSummary(data);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const tiles = [
+    { label: 'Tenants', value: summary?.tenants, icon: <Building24Regular />, to: '/administration' },
+    { label: 'Active tenants', value: summary?.activeTenants, icon: <Building24Regular />, to: '/administration' },
+    { label: 'Suspended tenants', value: summary?.suspendedTenants, icon: <Alert24Regular />, to: '/administration' },
+    { label: 'Fleets', value: summary?.fleets, icon: <VehicleTruck24Regular />, to: '/administration' },
+    { label: 'Vehicles', value: summary?.vehicles, icon: <VehicleCar24Regular />, to: '/administration' }
+  ];
+
+  return (
+    <>
+      <PageHeader title="Platform overview" subtitle="Tenants, fleets and vehicles across the platform." />
+      {loading ? (
+        <Spinner label="Loading dashboard…" />
+      ) : (
+        <div className={styles.grid}>
+          {tiles.map((t) => (
+            <Card key={t.label} className={styles.tile} onClick={() => navigate(t.to)}>
+              <div className={styles.tileTop}>
+                <Text className={styles.label}>{t.label}</Text>
+                {t.icon}
+              </div>
+              <Text className={styles.value} block>
+                {t.value ?? 0}
+              </Text>
+            </Card>
+          ))}
+        </div>
+      )}
+      <Text as="p" style={{ color: tokens.colorNeutralForeground3 }}>
+        Manage tenants (create, suspend, activate or delete) from the Administration area.
+      </Text>
+    </>
+  );
+}
+
+// --- Technician dashboard --------------------------------------------------
+function TechnicianDashboard({ username }: { username: string }) {
+  const styles = useStyles();
+  const navigate = useNavigate();
+  const [summary, setSummary] = useState<TechnicianDashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getMyWorkSummary();
+        if (mounted) setSummary(data);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const tiles = [
+    { label: 'My job cards', value: summary?.assignedJobCards, icon: <ClipboardTaskListLtr24Regular />, to: '/jobcards' },
+    { label: 'Open faults', value: summary?.openFaults, icon: <Alert24Regular />, to: '/faults' }
+  ];
+
+  return (
+    <>
+      <PageHeader title={`Welcome back, ${username}`} subtitle="Your assigned work and open faults." />
+      {loading ? (
+        <Spinner label="Loading dashboard…" />
+      ) : (
+        <div className={styles.grid}>
+          {tiles.map((t) => (
+            <Card key={t.label} className={styles.tile} onClick={() => navigate(t.to)}>
+              <div className={styles.tileTop}>
+                <Text className={styles.label}>{t.label}</Text>
+                {t.icon}
+              </div>
+              <Text className={styles.value} block>
+                {t.value ?? 0}
+              </Text>
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// --- Staff / Driver dashboard ---------------------------------------------
+function StaffDashboard({ username }: { username: string }) {
+  const styles = useStyles();
+  const navigate = useNavigate();
+
+  const tiles = [
+    { label: 'Report a fault', value: '+', icon: <Alert24Regular />, to: '/faults' },
+    { label: 'My vehicles', value: '', icon: <VehicleCar24Regular />, to: '/vehicles' }
+  ];
+
+  return (
+    <>
+      <PageHeader title={`Welcome back, ${username}`} subtitle="Report vehicle issues and view your vehicles." />
+      <div className={styles.grid}>
+        {tiles.map((t) => (
+          <Card key={t.label} className={styles.tile} onClick={() => navigate(t.to)}>
+            <div className={styles.tileTop}>
+              <Text className={styles.label}>{t.label}</Text>
+              {t.icon}
+            </div>
+            {t.value ? (
+              <Text className={styles.value} block>
+                {t.value}
+              </Text>
+            ) : null}
+          </Card>
+        ))}
+      </div>
+      <Text as="p" style={{ color: tokens.colorNeutralForeground3 }}>
+        Spotted a problem with a vehicle? Use “Report a fault” so the workshop can action it.
+      </Text>
+    </>
+  );
+}
+
+// --- Manager / Tenant Admin operational dashboard --------------------------
+function ManagerDashboard({ username }: { username: string }) {
+  const styles = useStyles();
+  const navigate = useNavigate();
+  const { hasAnyRole } = useAuth();
+  const isTenantAdmin = hasAnyRole('TenantAdmin');
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<number>(0);
+  const [upcoming, setUpcoming] = useState<ServiceSchedule[]>([]);
+  const [overdue, setOverdue] = useState<ServiceSchedule[]>([]);
+  const [recentFaults, setRecentFaults] = useState<Fault[]>([]);
+  const [expiringDocs, setExpiringDocs] = useState<ComplianceDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [fleets, vehicles, faults, jobs, up, over, expired, expiring] = await Promise.all([
           getFleets().catch(() => []),
           getVehicles().catch(() => []),
           getFaults().catch(() => []),
           getJobCards().catch(() => []),
           getUpcomingSchedules().catch(() => []),
-          getOverdueSchedules().catch(() => [])
+          getOverdueSchedules().catch(() => []),
+          queryComplianceDocuments({ expiredOnly: true, pageSize: 50 }).catch(() => ({ items: [], totalCount: 0, page: 1, pageSize: 0 })),
+          queryComplianceDocuments({ expiringWithinDays: 30, pageSize: 5 }).catch(() => ({ items: [], totalCount: 0, page: 1, pageSize: 0 }))
         ]);
         if (!mounted) return;
         setStats({
@@ -101,10 +286,17 @@ export default function DashboardPage() {
           openFaults: faults.filter((f) => (f.status ?? '').toLowerCase() !== 'resolved').length,
           activeJobs: jobs.filter((j) =>
             ['open', 'inprogress', 'in progress'].includes((j.status ?? '').toLowerCase())
-          ).length
+          ).length,
+          complianceAlerts: (expired.totalCount ?? 0) + (expiring.totalCount ?? 0)
         });
+
+        if (isTenantAdmin) {
+          const tenantSummary = await getTenantSummary().catch(() => null);
+          if (mounted && tenantSummary) setUsers(tenantSummary.users);
+        }
         setUpcoming(up.slice(0, 5));
         setOverdue(over.slice(0, 5));
+        setExpiringDocs(expiring.items ?? []);
         setRecentFaults(
           [...faults]
             .sort(
@@ -120,19 +312,23 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isTenantAdmin]);
 
   const tiles = [
     { label: 'Fleets', value: stats?.fleets, icon: <VehicleTruck24Regular />, to: '/fleets' },
     { label: 'Vehicles', value: stats?.vehicles, icon: <VehicleCar24Regular />, to: '/vehicles' },
     { label: 'Open faults', value: stats?.openFaults, icon: <Alert24Regular />, to: '/faults' },
-    { label: 'Active job cards', value: stats?.activeJobs, icon: <ClipboardTaskListLtr24Regular />, to: '/jobcards' }
+    { label: 'Active job cards', value: stats?.activeJobs, icon: <ClipboardTaskListLtr24Regular />, to: '/jobcards' },
+    { label: 'Compliance alerts', value: stats?.complianceAlerts, icon: <DocumentBulletList24Regular />, to: '/compliance' },
+    ...(isTenantAdmin
+      ? [{ label: 'Users', value: users, icon: <People24Regular />, to: '/administration' }]
+      : [])
   ];
 
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${user?.username ?? ''}`}
+        title={`Welcome back, ${username}`}
         subtitle="Here's what's happening across your fleet operations."
       />
       {loading ? (
@@ -212,8 +408,28 @@ export default function DashboardPage() {
               ))
             )}
           </Card>
-        </div>
-      )}
+            <Card className={styles.panel}>
+              <Text className={styles.panelTitle} block>
+                Expiring documents ({expiringDocs.length})
+              </Text>
+              {expiringDocs.length === 0 ? (
+                <Text className={styles.emptyText}>No documents expiring soon.</Text>
+              ) : (
+                expiringDocs.map((d) => (
+                  <div key={d.id} className={styles.row} onClick={() => navigate('/compliance')}>
+                    <div>
+                      <Text block>{d.name}</Text>
+                      <Text className={styles.rowMeta}>
+                        {d.vehicleRegistration ?? `Vehicle #${d.vehicleId}`} · expires {fmtDate(d.expiryDate)}
+                      </Text>
+                    </div>
+                    <StatusBadge value={d.status} />
+                  </div>
+                ))
+              )}
+            </Card>
+          </div>
+        )}
       <Text as="p" style={{ color: tokens.colorNeutralForeground3 }}>
         Use the navigation on the left to manage fleets and vehicles, report and triage faults, run
         workshop job cards, and review maintenance cost reports.

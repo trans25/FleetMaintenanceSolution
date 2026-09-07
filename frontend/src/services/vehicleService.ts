@@ -1,18 +1,8 @@
 import { FLEET_BASE, api, unwrapPaged } from '../api/client';
-import type { Vehicle } from '../api/types';
+import type { ImportResult, PagedResult, Vehicle } from '../api/types';
 
 // List endpoints return a PagedResult<T>; request a large page and unwrap.
 const LIST_PARAMS = { params: { page: 1, pageSize: 1000 } };
-
-export interface PagedResult<T> {
-  items: T[];
-  page: number;
-  pageSize: number;
-  totalCount: number;
-  totalPages: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-}
 
 export interface VehicleQueryParams {
   page?: number;
@@ -57,4 +47,12 @@ export async function updateVehicle(id: number, payload: Partial<Vehicle>): Prom
 
 export async function deleteVehicle(id: number): Promise<void> {
   await api.delete(`${FLEET_BASE}/vehicle/${id}`);
+}
+
+// Uploads a CSV of vehicles; the backend stamps the caller's TenantId per row.
+export async function importVehicles(file: File): Promise<ImportResult> {
+  const data = new FormData();
+  data.append('file', file);
+  const res = await api.post<ImportResult>(`${FLEET_BASE}/vehicle/import`, data);
+  return res.data;
 }

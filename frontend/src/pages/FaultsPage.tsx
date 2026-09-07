@@ -30,8 +30,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { DataToolbar } from '../components/DataToolbar';
 import { Pagination } from '../components/Pagination';
 import { RowActions } from '../components/RowActions';
-import { useListView } from '../hooks/useListView';
-import { convertFaultToJobCard, deleteFault, getFaults, reportFault } from '../services/faultService';
+import { useServerListView } from '../hooks/useServerListView';
+import { convertFaultToJobCard, deleteFault, queryFaults, reportFault } from '../services/faultService';
 import { getVehicles } from '../services/vehicleService';
 import { apiErrorMessage } from '../api/client';
 import type { Fault, Vehicle } from '../api/types';
@@ -40,52 +40,53 @@ const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 const FAULT_STATUSES = ['Open', 'Reported', 'InProgress', 'Resolved'];
 
 export default function FaultsPage() {
-  const [faults, setFaults] = useState<Fault[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<Fault | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [f, v] = await Promise.all([getFaults(), getVehicles().catch(() => [])]);
-      setFaults(f);
-      setVehicles(v);
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Unable to load faults.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const regOf = (f: Fault) =>
-    f.vehicleRegistration ?? vehicles.find((v) => v.id === f.vehicleId)?.registrationNumber ?? '';
-
-  const view = useListView<Fault>({
-    items: faults,
-    searchFields: (f) => [f.title, f.description, regOf(f)],
+  // Server-side search + filter + pagination so the list scales.
+  const view = useServerListView<Fault>({
+    initialPageSize: 20,
     filters: [
       {
         key: 'severity',
         label: 'Severity',
         options: SEVERITIES.map((s) => ({ value: s, label: s })),
-        predicate: (f, value) => (f.severity ?? '').toLowerCase() === value.toLowerCase()
+        predicate: () => true // filtering happens on the server
       },
       {
         key: 'status',
         label: 'Status',
         options: FAULT_STATUSES.map((s) => ({ value: s, label: s })),
-        predicate: (f, value) => (f.status ?? '').toLowerCase() === value.toLowerCase()
+        predicate: () => true // filtering happens on the server
       }
-    ]
+    ],
+    fetchPage: async ({ page, pageSize, search, filterValues }) => {
+      const result = await queryFaults({
+        page,
+        pageSize,
+        search,
+        status: filterValues.status,
+        severity: filterValues.severity
+      });
+      return {
+        items: result.items,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages
+      };
+    }
   });
+
+  const load = () => view.refresh();
+  const loading = view.loading;
+  const error = view.error;
+
+  // Reference-data for the report dialog and registration display.
+  useEffect(() => {
+    void (async () => {
+      setVehicles(await getVehicles().catch(() => []));
+    })();
+  }, []);
 
   const columns: TableColumnDefinition<Fault>[] = [
     createTableColumn<Fault>({
@@ -345,7 +346,7 @@ function ConvertDialog({
                 type="number"
                 value={estimatedCost}
                 onChange={(_, d) => setEstimatedCost(d.value)}
-                contentBefore="$"
+                contentBefore="R"
               />
             </Field>
           </DialogContent>

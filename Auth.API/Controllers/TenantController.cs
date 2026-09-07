@@ -1,3 +1,4 @@
+using Fleet.Core.Common;
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
 using Fleet.Core.ViewModels.Tenants;
@@ -85,7 +86,27 @@ public class TenantController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteTenant(int id)
     {
+        if (id == User.GetTenantId())
+            return BadRequest("You cannot delete the tenant you are currently signed in to.");
+
         var result = await _tenantService.DeleteTenantAsync(id);
+        return result ? NoContent() : NotFound($"Tenant with ID {id} not found");
+    }
+
+    [HttpPost("{id}/suspend")]
+    public async Task<ActionResult> SuspendTenant(int id)
+    {
+        if (id == User.GetTenantId())
+            return BadRequest("You cannot suspend the tenant you are currently signed in to.");
+
+        var result = await _tenantService.SuspendTenantAsync(id);
+        return result ? NoContent() : NotFound($"Tenant with ID {id} not found");
+    }
+
+    [HttpPost("{id}/activate")]
+    public async Task<ActionResult> ActivateTenant(int id)
+    {
+        var result = await _tenantService.ActivateTenantAsync(id);
         return result ? NoContent() : NotFound($"Tenant with ID {id} not found");
     }
 

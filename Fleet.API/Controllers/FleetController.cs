@@ -1,6 +1,7 @@
 using Fleet.Core.Common;
 using Fleet.Core.Services;
 using Fleet.Core.ViewModels.Fleets;
+using Fleet.Core.ViewModels.Import;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,13 +21,28 @@ public class FleetController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<PagedResult<FleetListViewModel>>> GetAllFleets([FromQuery] PaginationQuery pagination)
+    public async Task<ActionResult<PagedResult<FleetListViewModel>>> GetAllFleets([FromQuery] FleetQuery query)
     {
-        var fleets = await _fleetService.GetAllFleetsAsync();
-        fleets = ApplyTenantScope(fleets);
+        var fleets = ApplyTenantScope(await _fleetService.GetAllFleetsAsync());
 
-        var vms = fleets.Select(MapToListViewModel);
-        return Ok(PagedResult<FleetListViewModel>.Create(vms, pagination.Page, pagination.PageSize));
+        if (query.IsActive.HasValue)
+        {
+            fleets = fleets.Where(f => f.IsActive == query.IsActive.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+            fleets = fleets.Where(f =>
+                (f.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (f.Location?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (f.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var vms = fleets
+            .OrderBy(f => f.Name)
+            .Select(MapToListViewModel);
+        return Ok(PagedResult<FleetListViewModel>.Create(vms, query.Page, query.PageSize));
     }
 
     [HttpGet("{id}")]
@@ -94,6 +110,105 @@ public class FleetController : ControllerBase
 
         var created = await _fleetService.CreateFleetAsync(fleet);
         return CreatedAtAction(nameof(GetFleetById), new { id = created.Id }, MapToDetailViewModel(created));
+    }
+
+    // Bulk-import fleets from a CSV upload. Every row is stamped with the caller's
+    // tenant; the file never supplies a TenantId. Header: Name,Description,Location,IsActive
+    [HttpPost("import")]
+    [Authorize(Policy = "RequireManager")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<ActionResult<ImportResult>> ImportFleets(IFormFile file)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest("No file uploaded.");
+
+        var tenantId = User.GetTenantId();
+        if (tenantId is null)
+            return Forbid();
+
+        var result = new ImportResult();
+        using var reader = new StreamReader(file.OpenReadStream());
+
+        string? line;
+        var rowNumber = 0;
+        var isHeader = true;
+        while ((line = await reader.ReadLineAsync()) is not null)
+        {
+            if (isHeader) { isHeader = false; continue; }
+            rowNumber++;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            result.TotalRows++;
+            var cells = ParseCsvLine(line);
+            var name = cells.ElementAtOrDefault(0)?.Trim();
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                result.Failed++;
+                result.Rows.Add(new ImportRowResult { RowNumber = rowNumber, Success = false, Error = "Name is required." });
+                continue;
+            }
+
+            try
+            {
+                var fleet = new Core.Domain.Fleet
+                {
+                    Name = name,
+                    Description = cells.ElementAtOrDefault(1)?.Trim() ?? string.Empty,
+                    Location = cells.ElementAtOrDefault(2)?.Trim() ?? string.Empty,
+                    IsActive = ParseBool(cells.ElementAtOrDefault(3), true),
+                    TenantId = tenantId.Value
+                };
+                await _fleetService.CreateFleetAsync(fleet);
+                result.Imported++;
+                result.Rows.Add(new ImportRowResult { RowNumber = rowNumber, Success = true, Identifier = name });
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                result.Rows.Add(new ImportRowResult { RowNumber = rowNumber, Success = false, Identifier = name, Error = ex.Message });
+            }
+        }
+
+        return Ok(result);
+    }
+
+    private static bool ParseBool(string? value, bool fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        value = value.Trim();
+        if (bool.TryParse(value, out var b)) return b;
+        return value is "1" or "yes" or "y" or "Y" or "Yes" or "TRUE";
+    }
+
+    // Minimal CSV field parser supporting double-quoted fields and escaped quotes.
+    private static List<string> ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else sb.Append(c);
+            }
+            else
+            {
+                if (c == '"') inQuotes = true;
+                else if (c == ',') { fields.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
+            }
+        }
+        fields.Add(sb.ToString());
+        return fields;
     }
 
     [HttpPut("{id}")]

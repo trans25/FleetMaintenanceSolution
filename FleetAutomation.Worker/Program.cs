@@ -26,7 +26,7 @@ builder.Services.Configure<AutomationOptions>(
     builder.Configuration.GetSection(AutomationOptions.SectionName));
 
 // Email seam + automation services (notification dispatch + rule engine)
-builder.Services.AddPlatformEmail();
+builder.Services.AddPlatformEmail(builder.Configuration);
 builder.Services.AddFleetAutomation();
 
 // Hosted background worker

@@ -11,4 +11,10 @@ public interface ITenantService
     Task<Tenant> CreateTenantAsync(Tenant tenant);
     Task<Tenant> UpdateTenantAsync(Tenant tenant);
     Task<bool> DeleteTenantAsync(int id);
+
+    /// <summary>Suspends a tenant (IsActive = false); its users are blocked at login.</summary>
+    Task<bool> SuspendTenantAsync(int id);
+
+    /// <summary>Re-activates a previously suspended tenant.</summary>
+    Task<bool> ActivateTenantAsync(int id);
 }

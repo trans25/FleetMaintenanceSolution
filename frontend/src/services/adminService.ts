@@ -14,6 +14,42 @@ export async function getTenants(): Promise<AdminTenant[]> {
   return res.data ?? [];
 }
 
+export interface TenantPayload {
+  name: string;
+  contactEmail: string;
+  contactPhone?: string;
+  isActive: boolean;
+}
+
+export async function createTenant(payload: TenantPayload): Promise<AdminTenant> {
+  const res = await api.post<AdminTenant>(`${AUTH_BASE}/tenant`, {
+    ...payload,
+    contactPhone: payload.contactPhone ?? ''
+  });
+  return res.data;
+}
+
+export async function updateTenant(id: number, payload: TenantPayload): Promise<AdminTenant> {
+  const res = await api.put<AdminTenant>(`${AUTH_BASE}/tenant/${id}`, {
+    ...payload,
+    id,
+    contactPhone: payload.contactPhone ?? ''
+  });
+  return res.data;
+}
+
+export async function deleteTenant(id: number): Promise<void> {
+  await api.delete(`${AUTH_BASE}/tenant/${id}`);
+}
+
+export async function suspendTenant(id: number): Promise<void> {
+  await api.post(`${AUTH_BASE}/tenant/${id}/suspend`);
+}
+
+export async function activateTenant(id: number): Promise<void> {
+  await api.post(`${AUTH_BASE}/tenant/${id}/activate`);
+}
+
 export async function getUsersByTenant(tenantId: number): Promise<AdminUser[]> {
   const res = await api.get<AdminUser[]>(`${AUTH_BASE}/user/tenant/${tenantId}`);
   return res.data ?? [];

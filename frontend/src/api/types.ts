@@ -11,6 +11,21 @@ export interface PagedResult<T> {
   hasNext: boolean;
 }
 
+// Result of a CSV bulk import (mirrors Fleet.Core.ViewModels.Import.ImportResult).
+export interface ImportRowResult {
+  rowNumber: number;
+  success: boolean;
+  identifier?: string;
+  error?: string;
+}
+
+export interface ImportResult {
+  totalRows: number;
+  imported: number;
+  failed: number;
+  rows: ImportRowResult[];
+}
+
 export interface Manufacturer {
   id: number;
   name: string;
@@ -43,13 +58,23 @@ export interface LoginResponse {
   roles: string[];
 }
 
-export interface RegisterRequest {
-  username: string;
-  email: string;
-  password: string;
+export interface TenantOnboardingRequest {
+  companyName: string;
+  contactPhone?: string;
   firstName: string;
   lastName: string;
+  username: string;
+  workEmail: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export interface TenantOnboardingResult {
   tenantId: number;
+  userId: number;
+  email: string;
+  verificationEmailSent: boolean;
+  message: string;
 }
 
 export interface Fleet {
@@ -140,6 +165,26 @@ export interface ServiceSchedule {
   mileageAtService?: number | null;
   status: string;
   notes?: string;
+}
+
+export interface ComplianceDocument {
+  id: number;
+  tenantId?: number;
+  vehicleId: number;
+  vehicleRegistration?: string;
+  documentType: string;
+  name: string;
+  documentNumber?: string | null;
+  issueDate: string;
+  expiryDate: string;
+  status: string;
+  notes?: string | null;
+  fileName?: string | null;
+  contentType?: string | null;
+  hasFile: boolean;
+  daysUntilExpiry: number;
+  createdAt?: string;
+  updatedAt?: string | null;
 }
 
 export interface JobCardTask {

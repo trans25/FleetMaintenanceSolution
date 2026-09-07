@@ -1,3 +1,4 @@
+using Fleet.Core.Common;
 using Fleet.Core.Domain;
 using Fleet.Core.Services;
 using Fleet.Core.ViewModels.JobCards;
@@ -21,10 +22,37 @@ public class JobCardsController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = "CanView")]
-    public async Task<ActionResult<IEnumerable<JobCardListViewModel>>> GetAll()
+    public async Task<ActionResult<PagedResult<JobCardListViewModel>>> GetAll([FromQuery] JobCardQuery query)
     {
-        var jobCards = await _jobCardService.GetAllJobCardsAsync();
-        return Ok(jobCards.Select(MapToListViewModel));
+        IEnumerable<JobCard> jobCards = await _jobCardService.GetAllJobCardsAsync();
+        jobCards = ApplyTenantScope(jobCards);
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            jobCards = jobCards.Where(j =>
+                string.Equals(j.Status, query.Status, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Priority))
+        {
+            jobCards = jobCards.Where(j =>
+                string.Equals(j.Priority, query.Priority, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+            jobCards = jobCards.Where(j =>
+                (j.JobNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (j.Title?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (j.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (j.Vehicle?.RegistrationNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var vms = jobCards
+            .OrderByDescending(j => j.CreatedDate)
+            .Select(MapToListViewModel);
+        return Ok(PagedResult<JobCardListViewModel>.Create(vms, query.Page, query.PageSize));
     }
 
     [HttpGet("{id}")]
@@ -32,16 +60,18 @@ public class JobCardsController : ControllerBase
     public async Task<ActionResult<JobCardDetailViewModel>> GetById(int id)
     {
         var jobCard = await _jobCardService.GetJobCardByIdAsync(id);
-        return jobCard == null
-            ? NotFound($"Job card with ID {id} not found")
-            : Ok(MapToDetailViewModel(jobCard));
+        if (jobCard == null)
+            return NotFound($"Job card with ID {id} not found");
+        if (!CanAccessTenant(jobCard.TenantId))
+            return Forbid();
+        return Ok(MapToDetailViewModel(jobCard));
     }
 
     [HttpGet("status/{status}")]
     [Authorize(Policy = "CanView")]
     public async Task<ActionResult<IEnumerable<JobCardListViewModel>>> GetByStatus(string status)
     {
-        var jobCards = await _jobCardService.GetJobCardsByStatusAsync(status);
+        var jobCards = ApplyTenantScope(await _jobCardService.GetJobCardsByStatusAsync(status));
         return Ok(jobCards.Select(MapToListViewModel));
     }
 
@@ -51,6 +81,10 @@ public class JobCardsController : ControllerBase
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+
+        var tenantId = User.GetTenantId();
+        if (tenantId is null && !User.IsSystemAdmin())
+            return Forbid();
 
         var jobCard = new JobCard
         {
@@ -62,7 +96,8 @@ public class JobCardsController : ControllerBase
             Priority = model.Priority,
             Status = model.Status,
             AssignedToUserId = model.AssignedToUserId,
-            EstimatedCost = model.EstimatedCost
+            EstimatedCost = model.EstimatedCost,
+            TenantId = tenantId ?? 0
         };
 
         var created = await _jobCardService.CreateJobCardAsync(jobCard);
@@ -82,6 +117,8 @@ public class JobCardsController : ControllerBase
         var existing = await _jobCardService.GetJobCardByIdAsync(id);
         if (existing == null)
             return NotFound($"Job card with ID {id} not found");
+        if (!CanAccessTenant(existing.TenantId))
+            return Forbid();
 
         existing.VehicleId = model.VehicleId;
         existing.FaultId = model.FaultId;
@@ -104,6 +141,12 @@ public class JobCardsController : ControllerBase
     [Authorize(Policy = "CanDelete")]
     public async Task<ActionResult> Delete(int id)
     {
+        var existing = await _jobCardService.GetJobCardByIdAsync(id);
+        if (existing == null)
+            return NotFound($"Job card with ID {id} not found");
+        if (!CanAccessTenant(existing.TenantId))
+            return Forbid();
+
         var result = await _jobCardService.DeleteJobCardAsync(id);
         return result ? NoContent() : NotFound($"Job card with ID {id} not found");
     }
@@ -114,6 +157,8 @@ public class JobCardsController : ControllerBase
     [Authorize(Policy = "CanEdit")]
     public async Task<ActionResult<JobCardDetailViewModel>> Start(int id, [FromBody] StartJobCardViewModel? model)
     {
+        if (!await CanAccessJobCard(id))
+            return Forbid();
         var updated = await _jobCardService.StartJobCardAsync(id, model?.AssignedToUserId);
         return Ok(MapToDetailViewModel(updated));
     }
@@ -122,6 +167,8 @@ public class JobCardsController : ControllerBase
     [Authorize(Policy = "CanEdit")]
     public async Task<ActionResult<JobCardDetailViewModel>> Complete(int id, [FromBody] CompleteJobCardViewModel? model)
     {
+        if (!await CanAccessJobCard(id))
+            return Forbid();
         var updated = await _jobCardService.CompleteJobCardAsync(id, model?.ActualCost);
         return Ok(MapToDetailViewModel(updated));
     }
@@ -130,8 +177,29 @@ public class JobCardsController : ControllerBase
     [Authorize(Policy = "CanEdit")]
     public async Task<ActionResult<JobCardDetailViewModel>> Cancel(int id)
     {
+        if (!await CanAccessJobCard(id))
+            return Forbid();
         var updated = await _jobCardService.CancelJobCardAsync(id);
         return Ok(MapToDetailViewModel(updated));
+    }
+
+    // ----- Tenant isolation helpers -----
+
+    private bool CanAccessTenant(int tenantId)
+        => User.IsSystemAdmin() || User.GetTenantId() == tenantId;
+
+    private IEnumerable<JobCard> ApplyTenantScope(IEnumerable<JobCard> jobCards)
+    {
+        if (User.IsSystemAdmin())
+            return jobCards;
+        var tenantId = User.GetTenantId();
+        return tenantId is null ? Enumerable.Empty<JobCard>() : jobCards.Where(j => j.TenantId == tenantId);
+    }
+
+    private async Task<bool> CanAccessJobCard(int id)
+    {
+        var jobCard = await _jobCardService.GetJobCardByIdAsync(id);
+        return jobCard != null && CanAccessTenant(jobCard.TenantId);
     }
 
     private static JobCardListViewModel MapToListViewModel(JobCard jobCard) => new()

@@ -41,10 +41,10 @@ export function AuthShell({
     <div className={styles.root}>
       <div className={styles.brandPane}>
         <div className={styles.brandTitle}>
-          <VehicleTruck24Filled /> Fleet Maintenance
+          <VehicleTruck24Filled /> Mashia Technology Fleet Platform
         </div>
         <Text className={styles.brandTag} block>
-          Manage fleets, track vehicles, report faults and run your workshop — all in one place.
+          The all in one platform to manage fleets, track vehicles, report faults and run your workshop, built for teams that keep the wheels turning.
         </Text>
       </div>
       <div className={styles.formPane}>

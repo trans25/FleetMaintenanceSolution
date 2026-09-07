@@ -15,7 +15,7 @@ import { apiErrorMessage } from '../../api/client';
 export default function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { from?: string } };
+  const location = useLocation() as { state?: { from?: string; onboarded?: boolean; email?: string } };
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +38,13 @@ export default function LoginPage() {
   return (
     <AuthShell title="Sign in" subtitle="Use your Fleet Maintenance account">
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {location.state?.onboarded && (
+          <MessageBar intent="success">
+            <MessageBarBody>
+              Account created. Check {location.state.email ?? 'your inbox'} for a verification link before signing in.
+            </MessageBarBody>
+          </MessageBar>
+        )}
         {error && (
           <MessageBar intent="error">
             <MessageBarBody>{error}</MessageBarBody>
@@ -67,7 +74,7 @@ export default function LoginPage() {
           {loading ? <Spinner size="tiny" /> : 'Sign in'}
         </Button>
         <div style={{ textAlign: 'center' }}>
-          Don&apos;t have an account? <Link to="/register">Create one</Link>
+          Don&apos;t have an account? <Link to="/signup">Create one</Link>
         </div>
       </form>
     </AuthShell>

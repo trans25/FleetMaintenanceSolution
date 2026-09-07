@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   DataGrid,
@@ -23,43 +23,26 @@ import {
   createTableColumn,
   type TableColumnDefinition
 } from '@fluentui/react-components';
-import { Add24Regular } from '@fluentui/react-icons';
+import { Add24Regular, ArrowUpload24Regular } from '@fluentui/react-icons';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataToolbar } from '../components/DataToolbar';
 import { Pagination } from '../components/Pagination';
 import { RowActions } from '../components/RowActions';
-import { useListView } from '../hooks/useListView';
-import { createFleet, deleteFleet, getFleets } from '../services/fleetService';
+import { ImportDialog } from '../components/ImportDialog';
+import { useServerListView } from '../hooks/useServerListView';
+import { createFleet, deleteFleet, importFleets, queryFleets } from '../services/fleetService';
 import { useAuth } from '../auth/AuthContext';
 import { apiErrorMessage } from '../api/client';
 import type { Fleet } from '../api/types';
 
 export default function FleetsPage() {
-  const [fleets, setFleets] = useState<Fleet[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setFleets(await getFleets());
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Unable to load fleets.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const view = useListView<Fleet>({
-    items: fleets,
-    searchFields: (f) => [f.name, f.location, f.description],
+  // Server-side search + filter + pagination so the list scales to large tenants.
+  const view = useServerListView<Fleet>({
+    initialPageSize: 20,
     filters: [
       {
         key: 'active',
@@ -68,10 +51,28 @@ export default function FleetsPage() {
           { value: 'active', label: 'Active' },
           { value: 'inactive', label: 'Inactive' }
         ],
-        predicate: (f, value) => (value === 'active' ? f.isActive : !f.isActive)
+        predicate: () => true // filtering happens on the server
       }
-    ]
+    ],
+    fetchPage: async ({ page, pageSize, search, filterValues }) => {
+      const active = filterValues.active;
+      const result = await queryFleets({
+        page,
+        pageSize,
+        search,
+        isActive: active === 'active' ? true : active === 'inactive' ? false : undefined
+      });
+      return {
+        items: result.items,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages
+      };
+    }
   });
+
+  const load = () => view.refresh();
+  const loading = view.loading;
+  const error = view.error;
 
   const columns: TableColumnDefinition<Fleet>[] = [
     createTableColumn<Fleet>({
@@ -115,9 +116,14 @@ export default function FleetsPage() {
         title="Fleets"
         subtitle="Groups of vehicles you operate and maintain."
         actions={
-          <Button appearance="primary" icon={<Add24Regular />} onClick={() => setOpen(true)}>
-            New fleet
-          </Button>
+          <>
+            <Button icon={<ArrowUpload24Regular />} onClick={() => setImportOpen(true)}>
+              Import CSV
+            </Button>
+            <Button appearance="primary" icon={<Add24Regular />} onClick={() => setOpen(true)}>
+              New fleet
+            </Button>
+          </>
         }
       />
       {error && (
@@ -155,6 +161,15 @@ export default function FleetsPage() {
           setOpen(false);
           void load();
         }}
+      />
+
+      <ImportDialog
+        open={importOpen}
+        title="Import fleets"
+        columnsHint="Name,Description,Location,IsActive"
+        onImport={importFleets}
+        onClose={() => setImportOpen(false)}
+        onImported={() => void load()}
       />
     </>
   );

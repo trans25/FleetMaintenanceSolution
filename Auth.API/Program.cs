@@ -44,8 +44,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<Fleet.Core.Services.IUserService, Fleet.Core.Services.UserService>();
 builder.Services.AddScoped<Fleet.Core.Services.IRoleService, Fleet.Core.Services.RoleService>();
 builder.Services.AddScoped<Fleet.Core.Services.ITenantService, Fleet.Core.Services.TenantService>();
+builder.Services.AddScoped<Fleet.Core.Services.ITenantOnboardingService, Fleet.Core.Services.TenantOnboardingService>();
 builder.Services.AddScoped<ITokenStoreService, TokenStoreService>();
-builder.Services.AddPlatformEmail();
+builder.Services.AddPlatformEmail(builder.Configuration);
 
 // API versioning, health checks
 builder.Services.AddPlatformApiVersioning();
@@ -159,16 +160,18 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Apply pending migrations and seed baseline/demo data on startup.
+// Apply pending migrations on startup so the schema is always up to date.
+// No demo/baseline data is seeded, but the platform SystemAdmin account is always ensured.
 // Skipped under the test host to keep integration tests isolated.
 if (!app.Environment.IsEnvironment("Testing"))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var seedLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
-        .CreateLogger("DataSeeder");
     await db.Database.MigrateAsync();
-    await Fleet.Core.Data.DataSeeder.SeedAsync(db, seedLogger);
+
+    var bootstrapLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SystemAdminBootstrap");
+    await EnsureSystemAdminAsync(db, bootstrapLogger);
 }
 
 // Global exception handling -> ProblemDetails
@@ -204,6 +207,58 @@ app.MapControllers();
 app.MapPlatformHealthChecks();
 
 app.Run();
+
+// Ensures the platform SystemAdmin account always exists. This bootstraps only the
+// administrator user/role assignment and seeds no other data. It is idempotent and
+// never removes the SystemAdmin.
+static async Task EnsureSystemAdminAsync(ApplicationDbContext db, Microsoft.Extensions.Logging.ILogger logger)
+{
+    const string systemAdminEmail = "mashiaes@gmail.com";
+
+    try
+    {
+        var systemAdminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "SystemAdmin");
+        if (systemAdminRole is null)
+        {
+            logger.LogWarning("SystemAdmin role not found; skipping system admin bootstrap.");
+            return;
+        }
+
+        var user = await db.Users
+            .Include(u => u.Roles)
+            .FirstOrDefaultAsync(u => u.Email == systemAdminEmail);
+
+        if (user is null)
+        {
+            user = new Fleet.Core.Domain.User
+            {
+                Username = systemAdminEmail,
+                Email = systemAdminEmail,
+                FirstName = "Elias",
+                LastName = "Mashia",
+                PasswordHash = Fleet.Core.Security.PasswordHasher.Hash("Passw0rd!"),
+                IsActive = true,
+                TenantId = 1, // Default Tenant
+                Roles = new List<Fleet.Core.Domain.Role> { systemAdminRole }
+            };
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
+            logger.LogInformation("Created SystemAdmin user {Email}.", systemAdminEmail);
+        }
+        else if (!user.Roles.Any(r => r.Name == "SystemAdmin"))
+        {
+            user.Roles.Add(systemAdminRole);
+            user.IsActive = true;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Granted SystemAdmin role to existing user {Email}.", systemAdminEmail);
+        }
+    }
+    catch (Exception ex)
+    {
+        // Bootstrapping the admin must never prevent the application from starting.
+        logger.LogError(ex, "Failed to ensure the SystemAdmin account on startup.");
+    }
+}
 
 // Exposed for integration testing with WebApplicationFactory<Program>.
 public partial class Program { }

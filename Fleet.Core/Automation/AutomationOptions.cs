@@ -23,6 +23,12 @@ public class AutomationOptions
     /// <summary>Enable the critical-fault alert rule.</summary>
     public bool CriticalFaultAlertsEnabled { get; set; } = true;
 
+    /// <summary>A compliance document is considered "expiring soon" within this many days.</summary>
+    public int DocumentExpiryWithinDays { get; set; } = 30;
+
+    /// <summary>Enable the compliance-document expiry alert rule.</summary>
+    public bool DocumentExpiryAlertsEnabled { get; set; } = true;
+
     /// <summary>
     /// Fallback recipient used when no fleet manager / tenant admin can be resolved
     /// and the tenant has no contact email. Optional.

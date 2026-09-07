@@ -9,7 +9,6 @@ public class CreateJobCardViewModel
 
     public int? FaultId { get; set; }
 
-    [Required]
     [StringLength(50)]
     public string JobNumber { get; set; } = string.Empty;
 

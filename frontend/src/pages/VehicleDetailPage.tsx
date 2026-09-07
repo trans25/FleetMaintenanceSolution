@@ -25,8 +25,9 @@ import { getVehicle } from '../services/vehicleService';
 import { getFaults } from '../services/faultService';
 import { getJobCards } from '../services/jobCardService';
 import { getSchedulesByVehicle } from '../services/serviceScheduleService';
+import { getComplianceByVehicle } from '../services/complianceService';
 import { apiErrorMessage } from '../api/client';
-import type { Fault, JobCard, ServiceSchedule, Vehicle } from '../api/types';
+import type { ComplianceDocument, Fault, JobCard, ServiceSchedule, Vehicle } from '../api/types';
 
 const useStyles = makeStyles({
   cards: {
@@ -58,6 +59,7 @@ export default function VehicleDetailPage() {
   const [faults, setFaults] = useState<Fault[]>([]);
   const [jobCards, setJobCards] = useState<JobCard[]>([]);
   const [schedules, setSchedules] = useState<ServiceSchedule[]>([]);
+  const [compliance, setCompliance] = useState<ComplianceDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,16 +68,18 @@ export default function VehicleDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const [v, allFaults, allJobs, sched] = await Promise.all([
+        const [v, allFaults, allJobs, sched, docs] = await Promise.all([
           getVehicle(vehicleId),
           getFaults().catch(() => []),
           getJobCards().catch(() => []),
-          getSchedulesByVehicle(vehicleId).catch(() => [])
+          getSchedulesByVehicle(vehicleId).catch(() => []),
+          getComplianceByVehicle(vehicleId).catch(() => [])
         ]);
         setVehicle(v);
         setFaults(allFaults.filter((f) => f.vehicleId === vehicleId));
         setJobCards(allJobs.filter((j) => j.vehicleId === vehicleId));
         setSchedules(sched);
+        setCompliance(docs);
       } catch (err) {
         setError(apiErrorMessage(err, 'Unable to load vehicle details.'));
       } finally {
@@ -105,6 +109,13 @@ export default function VehicleDetailPage() {
     createTableColumn<ServiceSchedule>({ columnId: 'scheduled', renderHeaderCell: () => 'Scheduled', renderCell: (s) => fmtDate(s.scheduledDate) }),
     createTableColumn<ServiceSchedule>({ columnId: 'completed', renderHeaderCell: () => 'Completed', renderCell: (s) => fmtDate(s.completedDate) }),
     createTableColumn<ServiceSchedule>({ columnId: 'status', renderHeaderCell: () => 'Status', renderCell: (s) => <StatusBadge value={s.status} /> })
+  ];
+
+  const complianceColumns: TableColumnDefinition<ComplianceDocument>[] = [
+    createTableColumn<ComplianceDocument>({ columnId: 'type', renderHeaderCell: () => 'Type', renderCell: (d) => d.documentType }),
+    createTableColumn<ComplianceDocument>({ columnId: 'name', renderHeaderCell: () => 'Name', renderCell: (d) => d.name }),
+    createTableColumn<ComplianceDocument>({ columnId: 'expiry', renderHeaderCell: () => 'Expires', renderCell: (d) => fmtDate(d.expiryDate) }),
+    createTableColumn<ComplianceDocument>({ columnId: 'status', renderHeaderCell: () => 'Status', renderCell: (d) => <StatusBadge value={d.status} /> })
   ];
 
   const jobColumns: TableColumnDefinition<JobCard>[] = [
@@ -166,6 +177,7 @@ export default function VehicleDetailPage() {
       <HistorySection title="Service schedules" items={schedules} columns={scheduleColumns} getId={(s) => s.id} empty="No service schedules for this vehicle." styles={styles} />
       <HistorySection title="Faults" items={faults} columns={faultColumns} getId={(f) => f.id} empty="No faults reported for this vehicle." styles={styles} />
       <HistorySection title="Job cards" items={jobCards} columns={jobColumns} getId={(j) => j.id} empty="No job cards for this vehicle." styles={styles} />
+      <HistorySection title="Compliance documents" items={compliance} columns={complianceColumns} getId={(d) => d.id} empty="No compliance documents for this vehicle." styles={styles} />
     </>
   );
 }

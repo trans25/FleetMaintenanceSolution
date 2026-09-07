@@ -34,12 +34,14 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
       setItems(await getNotifications());
+      setLastRefreshed(new Date());
     } catch (err) {
       setError(apiErrorMessage(err, 'Unable to load notifications.'));
     } finally {
@@ -111,9 +113,16 @@ export default function NotificationsPage() {
         title="Notifications"
         subtitle="Automated alerts for upcoming services and critical faults."
         actions={
-          <Button icon={<ArrowClockwise24Regular />} onClick={() => void load()}>
-            Refresh
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {lastRefreshed && (
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                Updated {lastRefreshed.toLocaleTimeString()}
+              </Text>
+            )}
+            <Button icon={<ArrowClockwise24Regular />} onClick={() => void load()} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
       {error && (

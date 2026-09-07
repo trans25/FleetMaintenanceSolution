@@ -28,13 +28,14 @@ export interface RowActionsProps {
   onDelete?: () => Promise<void>;
   deleteLabel?: string;
   deleteConfirm?: string;
+  disabled?: boolean;
 }
 
 /**
  * Reusable per-row action menu with optional View navigation and Delete
  * (with confirmation) used across list pages.
  */
-export function RowActions({ onView, onDelete, deleteLabel = 'Delete', deleteConfirm }: RowActionsProps) {
+export function RowActions({ onView, onDelete, deleteLabel = 'Delete', deleteConfirm, disabled = false }: RowActionsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,7 +73,7 @@ export function RowActions({ onView, onDelete, deleteLabel = 'Delete', deleteCon
               </MenuItem>
             )}
             {onDelete && (
-              <MenuItem icon={<Delete24Regular />} onClick={() => setConfirmOpen(true)}>
+              <MenuItem icon={<Delete24Regular />} disabled={disabled} onClick={() => setConfirmOpen(true)}>
                 {deleteLabel}
               </MenuItem>
             )}

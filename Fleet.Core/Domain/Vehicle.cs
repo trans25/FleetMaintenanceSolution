@@ -24,4 +24,5 @@ public class Vehicle : BaseTenantEntity
     public ICollection<ServiceSchedule> ServiceSchedules { get; set; } = new List<ServiceSchedule>();
     public ICollection<Fault> Faults { get; set; } = new List<Fault>();
     public ICollection<JobCard> JobCards { get; set; } = new List<JobCard>();
+    public ICollection<ComplianceDocument> ComplianceDocuments { get; set; } = new List<ComplianceDocument>();
 }

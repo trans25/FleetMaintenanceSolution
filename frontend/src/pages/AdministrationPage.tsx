@@ -26,18 +26,20 @@ import {
   tokens,
   type TableColumnDefinition
 } from '@fluentui/react-components';
-import { Add24Regular } from '@fluentui/react-icons';
+import { Add24Regular, Edit24Regular } from '@fluentui/react-icons';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataToolbar } from '../components/DataToolbar';
 import { Pagination } from '../components/Pagination';
 import { RowActions } from '../components/RowActions';
 import { useListView } from '../hooks/useListView';
-import { getFleetsByTenant, getTenants, getUsersByTenant } from '../services/adminService';
+import { getFleetsByTenant, getTenants, getUsersByTenant, createTenant, updateTenant, deleteTenant, suspendTenant, activateTenant, type TenantPayload } from '../services/adminService';
 import { createUser, deleteUser, getUser, updateUser } from '../services/userService';
+import { queryComplianceDocuments } from '../services/complianceService';
 import { getRoles } from '../services/roleService';
 import { apiErrorMessage } from '../api/client';
-import type { AdminTenant, AdminUser, Fleet, Role } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
+import type { AdminTenant, AdminUser, ComplianceDocument, Fleet, Role } from '../api/types';
 
 const ADMIN_ROLES = ['SystemAdmin', 'TenantAdmin'];
 const MANAGER_ROLES = ['FleetManager', 'Manager'];
@@ -52,11 +54,21 @@ const useStyles = makeStyles({
 
 export default function AdministrationPage() {
   const styles = useStyles();
+  const { tenantId: currentTenantId } = useAuth();
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdminTenant | null>(null);
+  const [tenantDialog, setTenantDialog] = useState<AdminTenant | 'new' | null>(null);
+
+  const loadTenants = async () => {
+    try {
+      setTenants(await getTenants());
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Unable to load tenants.'));
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -110,13 +122,65 @@ export default function AdministrationPage() {
       columnId: 'actions',
       renderHeaderCell: () => '',
       renderCell: (t) => (
-        <Button
-          size="small"
-          appearance={selected?.id === t.id ? 'primary' : 'secondary'}
-          onClick={() => setSelected(t)}
-        >
-          {selected?.id === t.id ? 'Selected' : 'View details'}
-        </Button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Button
+            size="small"
+            appearance={selected?.id === t.id ? 'primary' : 'secondary'}
+            onClick={() => setSelected(t)}
+          >
+            {selected?.id === t.id ? 'Selected' : 'View details'}
+          </Button>
+          <Button size="small" icon={<Edit24Regular />} onClick={() => setTenantDialog(t)}>
+            Edit
+          </Button>
+          {t.isActive ? (
+            <Button
+              size="small"
+              disabled={t.id === currentTenantId}
+              title={t.id === currentTenantId ? 'You cannot suspend the tenant you are signed in to.' : undefined}
+              onClick={async () => {
+                try {
+                  setError(null);
+                  await suspendTenant(t.id);
+                  await loadTenants();
+                } catch (err) {
+                  setError(apiErrorMessage(err, 'Unable to suspend tenant.'));
+                }
+              }}
+            >
+              Suspend
+            </Button>
+          ) : (
+            <Button
+              size="small"
+              onClick={async () => {
+                try {
+                  setError(null);
+                  await activateTenant(t.id);
+                  await loadTenants();
+                } catch (err) {
+                  setError(apiErrorMessage(err, 'Unable to activate tenant.'));
+                }
+              }}
+            >
+              Activate
+            </Button>
+          )}
+          <RowActions
+            disabled={t.id === currentTenantId}
+            onDelete={async () => {
+              try {
+                setError(null);
+                await deleteTenant(t.id);
+                if (selected?.id === t.id) setSelected(null);
+                await loadTenants();
+              } catch (err) {
+                setError(apiErrorMessage(err, 'Unable to delete tenant.'));
+              }
+            }}
+            deleteConfirm={`Delete tenant "${t.name}"? This permanently deletes ALL of its data (users, fleets, vehicles, faults, job cards, compliance documents). This cannot be undone.`}
+          />
+        </div>
       )
     })
   ];
@@ -126,6 +190,11 @@ export default function AdministrationPage() {
       <PageHeader
         title="Administration"
         subtitle="Manage tenants and review their admins, managers, and fleets."
+        actions={
+          <Button appearance="primary" icon={<Add24Regular />} onClick={() => setTenantDialog('new')}>
+            New tenant
+          </Button>
+        }
       />
       {error && (
         <MessageBar intent="error" style={{ marginBottom: 16 }}>
@@ -166,12 +235,114 @@ export default function AdministrationPage() {
           {selected && <TenantDetails tenant={selected} roles={roles} styles={styles} />}
         </div>
       )}
+
+      <TenantDialog
+        target={tenantDialog}
+        onClose={() => setTenantDialog(null)}
+        onSaved={async () => {
+          setTenantDialog(null);
+          await loadTenants();
+        }}
+      />
     </>
   );
 }
 
 function hasAnyRole(user: AdminUser, roles: string[]): boolean {
   return user.roles.some((r) => roles.includes(r));
+}
+
+function TenantDialog({
+  target,
+  onClose,
+  onSaved
+}: {
+  target: AdminTenant | 'new' | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = target && target !== 'new';
+  const [name, setName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    setError(null);
+    if (target === 'new') {
+      setName('');
+      setContactEmail('');
+      setIsActive(true);
+    } else {
+      setName(target.name);
+      setContactEmail(target.contactEmail ?? '');
+      setIsActive(target.isActive);
+    }
+  }, [target]);
+
+  const submit = async () => {
+    if (!name.trim() || !contactEmail.trim()) {
+      setError('Name and contact email are required.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const payload: TenantPayload = {
+        name: name.trim(),
+        contactEmail: contactEmail.trim(),
+        isActive
+      };
+      if (isEdit) {
+        await updateTenant((target as AdminTenant).id, payload);
+      } else {
+        await createTenant(payload);
+      }
+      onSaved();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Unable to save tenant.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>{isEdit ? `Edit ${(target as AdminTenant).name}` : 'New tenant'}</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {error && (
+              <MessageBar intent="error">
+                <MessageBarBody>{error}</MessageBarBody>
+              </MessageBar>
+            )}
+            <Field label="Name" required>
+              <Input value={name} onChange={(_, d) => setName(d.value)} />
+            </Field>
+            <Field label="Contact email" required>
+              <Input type="email" value={contactEmail} onChange={(_, d) => setContactEmail(d.value)} />
+            </Field>
+            <Switch
+              label="Active"
+              checked={isActive}
+              onChange={(_, d) => setIsActive(d.checked)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button appearance="primary" onClick={submit} disabled={saving}>
+              {saving ? <Spinner size="tiny" /> : isEdit ? 'Save' : 'Create'}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
 }
 
 function TenantDetails({
@@ -185,6 +356,7 @@ function TenantDetails({
 }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [fleets, setFleets] = useState<Fleet[]>([]);
+  const [compliance, setCompliance] = useState<ComplianceDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -200,6 +372,8 @@ function TenantDetails({
       ]);
       setUsers(u);
       setFleets(f);
+      const docs = await queryComplianceDocuments({ pageSize: 1000 }).catch(() => ({ items: [], totalCount: 0, page: 1, pageSize: 0 }));
+      setCompliance((docs.items ?? []).filter((d) => d.tenantId === tenant.id));
     } catch (err) {
       setError(apiErrorMessage(err, 'Unable to load tenant details.'));
     } finally {
@@ -266,6 +440,7 @@ function TenantDetails({
               }}
             />
             <FleetSection fleets={fleets} />
+            <ComplianceSection documents={compliance} />
           </>
         )}
       </div>
@@ -451,6 +626,84 @@ function FleetSection({ fleets }: { fleets: Fleet[] }) {
             </DataGridBody>
           </DataGrid>
           <Pagination view={view} noun="fleets" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ComplianceSection({ documents }: { documents: ComplianceDocument[] }) {
+  const view = useListView<ComplianceDocument>({
+    items: documents,
+    searchFields: (d) => [d.name, d.documentType, d.documentNumber ?? '', d.vehicleRegistration ?? ''],
+    filters: [
+      {
+        key: 'status',
+        label: 'Status',
+        options: [
+          { value: 'Valid', label: 'Valid' },
+          { value: 'Expiring', label: 'Expiring' },
+          { value: 'Expired', label: 'Expired' }
+        ],
+        predicate: (d, value) => (d.status ?? '').toLowerCase() === value.toLowerCase()
+      }
+    ],
+    initialPageSize: 5
+  });
+
+  const columns: TableColumnDefinition<ComplianceDocument>[] = [
+    createTableColumn<ComplianceDocument>({
+      columnId: 'name',
+      renderHeaderCell: () => 'Document',
+      renderCell: (d) => d.name
+    }),
+    createTableColumn<ComplianceDocument>({
+      columnId: 'type',
+      renderHeaderCell: () => 'Type',
+      renderCell: (d) => d.documentType
+    }),
+    createTableColumn<ComplianceDocument>({
+      columnId: 'vehicle',
+      renderHeaderCell: () => 'Vehicle',
+      renderCell: (d) => d.vehicleRegistration ?? `Vehicle #${d.vehicleId}`
+    }),
+    createTableColumn<ComplianceDocument>({
+      columnId: 'expiry',
+      renderHeaderCell: () => 'Expires',
+      renderCell: (d) => new Date(d.expiryDate).toLocaleDateString()
+    }),
+    createTableColumn<ComplianceDocument>({
+      columnId: 'status',
+      renderHeaderCell: () => 'Status',
+      renderCell: (d) => <StatusBadge value={d.status} />
+    })
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+      <Text weight="semibold">Compliance documents ({documents.length})</Text>
+      {documents.length === 0 ? (
+        <Text style={{ color: tokens.colorNeutralForeground3 }}>No compliance documents for this tenant.</Text>
+      ) : (
+        <>
+          <DataToolbar view={view} searchPlaceholder="Search documents…" />
+          <DataGrid items={view.pageItems} columns={columns} getRowId={(d) => d.id}>
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => (
+                  <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+                )}
+              </DataGridRow>
+            </DataGridHeader>
+            <DataGridBody<ComplianceDocument>>
+              {({ item, rowId }) => (
+                <DataGridRow<ComplianceDocument> key={rowId}>
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+          <Pagination view={view} noun="documents" />
         </>
       )}
     </div>

@@ -36,6 +36,10 @@ public class AuthService : IAuthService
         if (user == null || !user.IsActive)
             return AuthResult.Failed("Invalid credentials");
 
+        // Block login when the user's tenant has been suspended/deactivated by a system admin.
+        if (user.Tenant != null && !user.Tenant.IsActive)
+            return AuthResult.Failed("Your organization's account has been suspended. Please contact your administrator.");
+
         if (!VerifyPassword(password, user.PasswordHash))
             return AuthResult.Failed("Invalid credentials");
 

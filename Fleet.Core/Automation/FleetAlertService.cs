@@ -45,6 +45,11 @@ public class FleetAlertService : IFleetAlertService
             sent += await EvaluateCriticalFaultsAsync(cancellationToken);
         }
 
+        if (_options.DocumentExpiryAlertsEnabled)
+        {
+            sent += await EvaluateDocumentExpiryAsync(cancellationToken);
+        }
+
         _logger.LogInformation("Automation cycle complete. {Count} new notification(s) sent.", sent);
         return sent;
     }
@@ -129,6 +134,61 @@ public class FleetAlertService : IFleetAlertService
             {
                 if (await _notifications.SendIfNewAsync(
                         f.TenantId, "CriticalFault", "Fault", f.Id,
+                        $"{dedupeKey}:{recipient}", recipient, subject, body, ct))
+                {
+                    sent++;
+                }
+            }
+        }
+
+        return sent;
+    }
+
+    private async Task<int> EvaluateDocumentExpiryAsync(CancellationToken ct)
+    {
+        var today = DateTime.UtcNow.Date;
+        var cutoff = today.AddDays(_options.DocumentExpiryWithinDays);
+
+        // Documents already expired or expiring within the configured window.
+        var documents = await _db.ComplianceDocuments
+            .Where(d => d.ExpiryDate.Date <= cutoff)
+            .Select(d => new
+            {
+                d.Id,
+                d.TenantId,
+                d.Name,
+                d.DocumentType,
+                d.ExpiryDate,
+                Registration = d.Vehicle.RegistrationNumber,
+                Model = d.Vehicle.Model
+            })
+            .ToListAsync(ct);
+
+        var sent = 0;
+        foreach (var d in documents)
+        {
+            var recipients = await _notifications.ResolveTenantRecipientsAsync(d.TenantId, ct);
+            var daysLeft = (d.ExpiryDate.Date - today).Days;
+            var expired = daysLeft < 0;
+
+            var subject = expired
+                ? $"[Fleet Alert] Document EXPIRED: {d.Registration} - {d.Name}"
+                : $"[Fleet Alert] Document expiring in {daysLeft} day(s): {d.Registration} - {d.Name}";
+            var body =
+                $"Compliance document '{d.Name}' ({d.DocumentType}) for vehicle " +
+                $"{d.Registration} ({d.Model}) " +
+                (expired
+                    ? $"expired on {d.ExpiryDate:yyyy-MM-dd}.\n\n"
+                    : $"expires on {d.ExpiryDate:yyyy-MM-dd} ({daysLeft} day(s) away).\n\n") +
+                "Please renew the document in the Fleet Maintenance system.";
+
+            // Re-alert once per expiry date so renewals reset the notification.
+            var dedupeKey = $"DocumentExpiry:{d.Id}:{d.ExpiryDate:yyyy-MM-dd}";
+
+            foreach (var recipient in recipients)
+            {
+                if (await _notifications.SendIfNewAsync(
+                        d.TenantId, "DocumentExpiry", "ComplianceDocument", d.Id,
                         $"{dedupeKey}:{recipient}", recipient, subject, body, ct))
                 {
                     sent++;

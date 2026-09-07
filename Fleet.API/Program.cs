@@ -36,11 +36,18 @@ builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
 builder.Services.AddScoped<IFleetRepository, FleetRepository>();
 builder.Services.AddScoped<IManufacturerRepository, ManufacturerRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
+builder.Services.AddScoped<IComplianceDocumentRepository, ComplianceDocumentRepository>();
 
 // Register services
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IFleetService, FleetService>();
 builder.Services.AddScoped<IManufacturerService, ManufacturerService>();
+builder.Services.AddScoped<IComplianceDocumentService, ComplianceDocumentService>();
+
+// Local file storage for compliance documents (no cloud dependency)
+builder.Services.Configure<Fleet.Core.Storage.FileStorageOptions>(
+    builder.Configuration.GetSection(Fleet.Core.Storage.FileStorageOptions.SectionName));
+builder.Services.AddSingleton<Fleet.Core.Storage.IFileStorage, Fleet.Core.Storage.LocalFileStorage>();
 
 // API versioning and health checks
 builder.Services.AddPlatformApiVersioning();

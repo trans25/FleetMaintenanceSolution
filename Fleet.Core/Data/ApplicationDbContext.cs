@@ -21,8 +21,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Fault> Faults { get; set; }
     public DbSet<JobCard> JobCards { get; set; }
     public DbSet<JobCardTask> JobCardTasks { get; set; }
+    public DbSet<ComplianceDocument> ComplianceDocuments { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
+    public DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -136,6 +138,28 @@ public class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // ComplianceDocument configuration
+        modelBuilder.Entity<ComplianceDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.DocumentType).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.DocumentNumber).HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(50);
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+            entity.Property(e => e.FileName).HasMaxLength(260);
+            entity.Property(e => e.FilePath).HasMaxLength(1024);
+            entity.Property(e => e.ContentType).HasMaxLength(200);
+
+            entity.HasIndex(e => new { e.TenantId, e.ExpiryDate });
+            entity.HasIndex(e => e.VehicleId);
+
+            entity.HasOne(e => e.Vehicle)
+                .WithMany(v => v.ComplianceDocuments)
+                .HasForeignKey(e => e.VehicleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // Fault configuration
         modelBuilder.Entity<Fault>(entity =>
         {
@@ -225,6 +249,19 @@ public class ApplicationDbContext : DbContext
 
         // PasswordResetToken configuration
         modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Token).IsRequired().HasMaxLength(256);
+            entity.HasIndex(e => e.Token);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // EmailVerificationToken configuration
+        modelBuilder.Entity<EmailVerificationToken>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Token).IsRequired().HasMaxLength(256);

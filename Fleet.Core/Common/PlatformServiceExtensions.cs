@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Fleet.Core.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Fleet.Core.Common;
@@ -37,9 +38,31 @@ public static class PlatformServiceExtensions
         return services;
     }
 
-    public static IServiceCollection AddPlatformEmail(this IServiceCollection services)
+    /// <summary>
+    /// Registers the email sender. When configuration sets
+    /// <c>Email:Provider = "Smtp"</c> and a non-empty <c>Email:Smtp:Host</c>,
+    /// a real <see cref="SmtpEmailSender"/> is used; otherwise the development
+    /// <see cref="LoggingEmailSender"/> is registered. Credentials are read from
+    /// configuration/environment only (never hardcoded).
+    /// </summary>
+    public static IServiceCollection AddPlatformEmail(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddScoped<IEmailSender, LoggingEmailSender>();
+        var smtpSection = configuration.GetSection("Email:Smtp");
+        services.Configure<SmtpOptions>(smtpSection);
+
+        var provider = configuration["Email:Provider"];
+        var host = smtpSection["Host"];
+
+        if (string.Equals(provider, "Smtp", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(host))
+        {
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+        }
+        else
+        {
+            services.AddScoped<IEmailSender, LoggingEmailSender>();
+        }
+
         return services;
     }
 

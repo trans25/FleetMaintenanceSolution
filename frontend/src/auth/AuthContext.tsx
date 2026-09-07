@@ -104,5 +104,11 @@ export function useAuth(): AuthContextValue {
 }
 
 // Role groupings used for UI gating.
+// Platform + tenant administrators (user & tenant management).
+export const ADMIN_ROLES = ['SystemAdmin', 'TenantAdmin'];
+// Anyone who owns operational data for a fleet (view all, manage).
 export const MANAGER_ROLES = ['SystemAdmin', 'TenantAdmin', 'FleetManager', 'Manager'];
-export const EDITOR_ROLES = [...MANAGER_ROLES, 'Technician', 'Mechanic', 'Staff'];
+// Managers plus workshop staff who action maintenance work.
+export const TECHNICIAN_ROLES = [...MANAGER_ROLES, 'Technician', 'Mechanic'];
+// Everyone who can write day-to-day records (includes frontline staff).
+export const EDITOR_ROLES = [...TECHNICIAN_ROLES, 'Staff'];

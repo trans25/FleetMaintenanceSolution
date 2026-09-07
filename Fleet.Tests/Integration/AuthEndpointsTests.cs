@@ -21,22 +21,23 @@ public class AuthEndpointsTests : IClassFixture<AuthApiFactory>
             AllowAutoRedirect = false
         });
 
-    private static object BuildRegister(string username, string email, string password) => new
+    private static object BuildOnboard(string username, string email, string password, string company) => new
     {
-        Username = username,
-        Email = email,
-        Password = password,
-        ConfirmPassword = password,
+        CompanyName = company,
+        ContactPhone = "0123456789",
         FirstName = "Test",
         LastName = "User",
-        TenantId = 1
+        Username = username,
+        WorkEmail = email,
+        Password = password,
+        ConfirmPassword = password
     };
 
     [Fact]
-    public async Task Register_FirstUser_BecomesSystemAdmin()
+    public async Task Onboard_CreatesTenantAndFirstAdmin()
     {
-        // Uses an isolated factory (fresh InMemory DB) so this user is genuinely
-        // the first user and receives the SystemAdmin bootstrap role.
+        // Uses an isolated factory (fresh InMemory DB) so onboarding is genuinely
+        // the first tenant/admin created for this store.
         using var factory = new AuthApiFactory();
         var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
         {
@@ -44,24 +45,25 @@ public class AuthEndpointsTests : IClassFixture<AuthApiFactory>
         });
 
         var response = await client.PostAsJsonAsync(
-            "/api/auth/register",
-            BuildRegister("admin", "admin@test.local", "Password1!"));
+            "/api/auth/onboard",
+            BuildOnboard("admin", "admin@test.local", "Password1!", "Acme Fleets"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.GetProperty("isSystemAdmin").GetBoolean().Should().BeTrue();
+        payload.GetProperty("tenantId").GetInt32().Should().BeGreaterThan(0);
+        payload.GetProperty("userId").GetInt32().Should().BeGreaterThan(0);
     }
 
     [Fact]
-    public async Task Register_DuplicateUsername_ReturnsConflict()
+    public async Task Onboard_DuplicateUsername_ReturnsConflict()
     {
         var client = CreateClient();
-        await client.PostAsJsonAsync("/api/auth/register",
-            BuildRegister("dupuser", "dup1@test.local", "Password1!"));
+        await client.PostAsJsonAsync("/api/auth/onboard",
+            BuildOnboard("dupuser", "dup1@test.local", "Password1!", "Dup Co One"));
 
-        var second = await client.PostAsJsonAsync("/api/auth/register",
-            BuildRegister("dupuser", "dup2@test.local", "Password1!"));
+        var second = await client.PostAsJsonAsync("/api/auth/onboard",
+            BuildOnboard("dupuser", "dup2@test.local", "Password1!", "Dup Co Two"));
 
         second.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -69,9 +71,17 @@ public class AuthEndpointsTests : IClassFixture<AuthApiFactory>
     [Fact]
     public async Task Login_WithValidCredentials_ReturnsAccessAndRefreshTokens()
     {
-        var client = CreateClient();
-        await client.PostAsJsonAsync("/api/auth/register",
-            BuildRegister("loginuser", "login@test.local", "Password1!"));
+        using var factory = new AuthApiFactory();
+        var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        await client.PostAsJsonAsync("/api/auth/onboard",
+            BuildOnboard("loginuser", "login@test.local", "Password1!", "Login Co"));
+
+        // Onboarded accounts start inactive; simulate email verification.
+        factory.VerifyUserEmail("login@test.local").Should().BeTrue();
 
         var login = await client.PostAsJsonAsync("/api/auth/login", new
         {
@@ -89,9 +99,15 @@ public class AuthEndpointsTests : IClassFixture<AuthApiFactory>
     [Fact]
     public async Task Login_WithInvalidCredentials_ReturnsUnauthorized()
     {
-        var client = CreateClient();
-        await client.PostAsJsonAsync("/api/auth/register",
-            BuildRegister("wrongpw", "wrongpw@test.local", "Password1!"));
+        using var factory = new AuthApiFactory();
+        var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        await client.PostAsJsonAsync("/api/auth/onboard",
+            BuildOnboard("wrongpw", "wrongpw@test.local", "Password1!", "Wrong Pw Co"));
+        factory.VerifyUserEmail("wrongpw@test.local").Should().BeTrue();
 
         var login = await client.PostAsJsonAsync("/api/auth/login", new
         {

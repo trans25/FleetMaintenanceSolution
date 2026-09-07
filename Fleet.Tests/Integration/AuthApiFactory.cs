@@ -51,4 +51,22 @@ public class AuthApiFactory : WebApplicationFactory<Program>
             db.Database.EnsureCreated();
         });
     }
+
+    /// <summary>
+    /// Simulates clicking the email verification link for a freshly onboarded
+    /// account by activating the user directly in the store. Returns true when a
+    /// matching user was found and activated.
+    /// </summary>
+    public bool VerifyUserEmail(string email)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var user = db.Users.FirstOrDefault(u => u.Email == email);
+        if (user is null)
+            return false;
+
+        user.IsActive = true;
+        db.SaveChanges();
+        return true;
+    }
 }

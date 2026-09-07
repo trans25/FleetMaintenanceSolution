@@ -8,6 +8,8 @@ using Fleet.Core.Domain;
 using Fleet.Core.Models.Identity;
 using Fleet.Core.Security;
 using Fleet.Core.Services;
+using Fleet.Core.ViewModels.Onboarding;
+using Microsoft.EntityFrameworkCore;
 
 namespace Auth.API.Controllers;
 
@@ -21,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly ITokenStoreService _tokenStore;
     private readonly IEmailSender _emailSender;
     private readonly IConfiguration _configuration;
+    private readonly ITenantOnboardingService _onboardingService;
 
     public AuthController(
         IAuthService authService,
@@ -28,7 +31,8 @@ public class AuthController : ControllerBase
         IRoleService roleService,
         ITokenStoreService tokenStore,
         IEmailSender emailSender,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ITenantOnboardingService onboardingService)
     {
         _authService = authService;
         _userService = userService;
@@ -36,6 +40,7 @@ public class AuthController : ControllerBase
         _tokenStore = tokenStore;
         _emailSender = emailSender;
         _configuration = configuration;
+        _onboardingService = onboardingService;
     }
 
     private TimeSpan RefreshTokenLifetime =>
@@ -65,60 +70,56 @@ public class AuthController : ControllerBase
         });
     }
 
-    [HttpPost("register")]
+    // Public tenant self-onboarding: a prospective client signs up with a work
+    // email, which atomically creates a new tenant and its first TenantAdmin
+    // user. The account stays inactive until the email is verified.
+    [HttpPost("onboard")]
     [EnableRateLimiting("auth")]
-    public async Task<ActionResult> Register([FromBody] RegisterModel model)
+    public async Task<ActionResult> Onboard([FromBody] TenantOnboardingRequest request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (await _userService.GetUserByUsernameAsync(model.Username) != null)
-            return Conflict($"Username '{model.Username}' is already taken.");
-
-        if (await _userService.GetUserByEmailAsync(model.Email) != null)
-            return Conflict($"Email '{model.Email}' is already registered.");
-
-        // Bootstrap: the very first user created becomes the SystemAdmin so the
-        // platform has an administrator without manual DB seeding.
-        var isFirstUser = !(await _userService.GetAllUsersAsync()).Any();
-
-        var user = new User
+        try
         {
-            Username = model.Username,
-            Email = model.Email,
-            PasswordHash = model.Password, // hashed inside UserService.CreateUserAsync
-            FirstName = model.FirstName,
-            LastName = model.LastName,
-            TenantId = model.TenantId,
-            IsActive = true
-        };
-
-        if (isFirstUser)
-        {
-            var systemAdminRole = await _roleService.GetRoleByNameAsync("SystemAdmin");
-            if (systemAdminRole != null)
-                user.Roles.Add(systemAdminRole);
+            var result = await _onboardingService.OnboardAsync(request);
+            return Ok(result);
         }
-        else
+        catch (InvalidOperationException ex)
         {
-            // Self-registered users receive a safe, limited default role so they
-            // have usable (but non-privileged) access. Admins can elevate them
-            // later via the Users API. Role selection is never client-controlled.
-            var defaultRole = await _roleService.GetRoleByNameAsync("Staff");
-            if (defaultRole != null)
-                user.Roles.Add(defaultRole);
+            return Conflict(ex.Message);
         }
-
-        var created = await _userService.CreateUserAsync(user);
-
-        return CreatedAtAction(nameof(Login), new
+        catch (DbUpdateException)
         {
-            created.Id,
-            created.Username,
-            created.Email,
-            IsSystemAdmin = isFirstUser,
-            Roles = created.Roles.Select(r => r.Name).ToList()
-        });
+            return StatusCode(500, "We couldn't complete your registration right now. Please try again later.");
+        }
+    }
+
+    // Consumes an email verification token and activates the account.
+    [HttpPost("verify-email")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult> VerifyEmail([FromBody] VerifyEmailRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var verified = await _onboardingService.VerifyEmailAsync(request.Token);
+        return verified
+            ? Ok(new { message = "Email verified. You can now sign in." })
+            : BadRequest("Invalid or expired verification link.");
+    }
+
+    // Re-issues a verification email for an unverified account. Always returns OK
+    // to avoid revealing whether an account exists.
+    [HttpPost("resend-verification")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult> ResendVerification([FromBody] ResendVerificationRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        await _onboardingService.ResendVerificationAsync(request.Email);
+        return Ok(new { message = "If that account exists and is unverified, a new verification email has been sent." });
     }
 
     [HttpPost("refresh")]
